@@ -1,30 +1,122 @@
-# Tamperelainen English Telegram Bot
+# Tamperelainen News Telegram Bot
 
-Reads Tamperelainen RSS, fetches each new article, translates it from Finnish
-to English, asks Ollama Cloud for a concise Russian summary, and publishes the
-summary to Telegram.
+A small Python bot that monitors the Tamperelainen RSS feed, fetches new
+articles, translates them, creates a short AI-generated summary, classifies
+the article, and publishes the result to Telegram.
 
-RSS:
+RSS source:
+
 https://www.tamperelainen.fi/feed/rss/
 
-## What it publishes
+## Output language
 
-Each new article becomes:
+The bot is **English by default**.
 
-🇬🇧 Russian headline
+Set the `OUTPUT_LANGUAGE` environment variable to change the output language:
 
-2-4 sentence Russian summary generated from the full article.
+```text
+OUTPUT_LANGUAGE=en
+```
 
-📰 Category
-🕒 Publication time
+or:
 
-🔗 Read original article
+```text
+OUTPUT_LANGUAGE=ru
+```
 
-The full article is not republished.
+Only `en` and `ru` are currently supported.
 
-## Local setup/test
+This repository's GitHub Actions workflow explicitly sets:
 
-Python 3.11+ recommended.
+```yaml
+OUTPUT_LANGUAGE: ru
+```
+
+Therefore **this repository publishes Russian**, while someone cloning the
+repository and running the bot without setting `OUTPUT_LANGUAGE` gets English
+output by default.
+
+For local use, put the setting in `.env`:
+
+```text
+OUTPUT_LANGUAGE=ru
+```
+
+or:
+
+```text
+OUTPUT_LANGUAGE=en
+```
+
+## Processing flow
+
+```text
+Tamperelainen RSS
+       ↓
+Find new article
+       ↓
+Fetch full article
+       ↓
+Finnish → configured output language
+       ↓
+Ollama Cloud
+       ├── category
+       └── 2-4 sentence summary
+       ↓
+Telegram
+       ↓
+Save article URL
+```
+
+## Features
+
+- Checks Tamperelainen every 30 minutes on GitHub Actions.
+- Publishes only articles that have not been processed before.
+- First deployment creates an RSS baseline and does not publish existing
+  articles.
+- Translates Finnish to the configured output language.
+- Generates a concise AI summary with Ollama Cloud.
+- Automatically classifies articles.
+- Includes the article's main image when available.
+- Uses Telegram HTML so the title is displayed in bold.
+- Includes a link to the original article.
+- Stores processed URLs in `data/articles.db`.
+- GitHub Actions commits the database so duplicate tracking survives between
+  runners.
+- An article is marked as processed only after Telegram delivery succeeds.
+- The database save step exits cleanly when there are no database changes.
+- GitHub Actions uses Node-24-compatible `actions/checkout@v5` and
+  `actions/setup-python@v6`.
+
+## Categories
+
+The classifier uses a controlled set of categories:
+
+- 🏙️ Local / Местные новости
+- 🚗 Traffic / Транспорт
+- 🚓 Crime / Происшествия и преступления
+- 🏛️ Politics / Политика
+- 💼 Business / Бизнес
+- 🏠 Housing / Недвижимость
+- 🏥 Health / Здоровье
+- 🎓 Education / Образование
+- 🎭 Culture / Культура
+- ⚽ Sports / Спорт
+- 🌦️ Weather / Погода
+- 🎉 Events / События
+- 🍴 Food / Еда
+- ✈️ Travel / Путешествия
+- 🌿 Environment / Экология
+- 💻 Technology / Технологии
+- 📰 News / Новости
+
+The category is returned by Ollama as a controlled identifier such as
+`TRAFFIC`, then Python maps it to the configured language's display label.
+Invalid categories fall back to `News`.
+
+## Local setup
+
+Python 3.11+ is recommended.
 
 ```bash
 python3 -m venv .venv
@@ -33,7 +125,25 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Set your credentials in `.env`.
+Set:
+
+```text
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+OLLAMA_API_KEY=...
+```
+
+The default is English:
+
+```text
+OUTPUT_LANGUAGE=en
+```
+
+To use Russian:
+
+```text
+OUTPUT_LANGUAGE=ru
+```
 
 Test without sending to Telegram:
 
@@ -41,7 +151,7 @@ Test without sending to Telegram:
 python bot.py --test
 ```
 
-Send one real batch:
+Run one real batch:
 
 ```bash
 python bot.py --once
@@ -49,15 +159,13 @@ python bot.py --once
 
 ## Ollama Cloud
 
-The project uses Ollama's direct API at:
+The bot uses Ollama's direct API.
 
-https://ollama.com/api/chat
-
-Create an Ollama API key at:
+Create an API key:
 
 https://ollama.com/settings/keys
 
-Then set:
+Set:
 
 ```text
 OLLAMA_API_KEY=...
@@ -69,19 +177,9 @@ The default model is:
 gpt-oss:20b
 ```
 
-Ollama currently lists `gpt-oss:20b-cloud` as a low-usage cloud model and
-`gpt-oss:120b-cloud` as a medium-usage cloud model. The direct API examples
-use `gpt-oss:20b` with the Ollama Cloud API endpoint, so this project uses
-`gpt-oss:20b`.
-
-Ollama's Free plan is currently $0 and includes access to cloud models, but
-cloud usage is subject to Ollama's current service limits.
-
 ## Telegram
 
-Create the bot with BotFather.
-
-Add it as an administrator to your Telegram channel with permission to post.
+Create a bot with BotFather and give it permission to post to your channel.
 
 Set:
 
@@ -90,43 +188,17 @@ TELEGRAM_BOT_TOKEN=...
 TELEGRAM_CHAT_ID=...
 ```
 
-Telegram HTML parse mode is enabled, so `<b>...</b>` is rendered as bold.
-The automatic Finnish webpage preview is disabled because the message already
-contains a dedicated original-article link.
+## GitHub Actions deployment
 
-## Free 24/7 hosting: GitHub Actions
+The included workflow is:
 
-This repository contains:
+```text
+.github/workflows/publish.yml
+```
 
-`.github/workflows/publish.yml`
+It runs every 30 minutes.
 
-It runs every 10 minutes, then exits. It does not need a permanent server.
-
-Flow:
-
-Tamperelainen RSS
--> article extraction
--> Finnish -> English translation
--> Ollama Cloud summary
--> Telegram
--> save processed URL database
-
-### 1. Create a GitHub repository
-
-Create a repository and upload the project files.
-
-A public repository is the simplest option because standard GitHub-hosted
-runners are free for public repositories.
-
-Do NOT put secrets in the repository.
-
-### 2. Add secrets
-
-Open:
-
-Settings -> Secrets and variables -> Actions -> New repository secret
-
-Add:
+Add these repository secrets:
 
 ```text
 TELEGRAM_BOT_TOKEN
@@ -134,161 +206,55 @@ TELEGRAM_CHAT_ID
 OLLAMA_API_KEY
 ```
 
-### 3. Enable Actions
+The workflow also contains:
 
-Open the Actions tab and enable the workflow if GitHub asks.
-
-Use:
-
-Actions -> Tamperelainen news -> Run workflow
-
-for the first manual test.
-
-### 4. Check the log
-
-A successful run should look roughly like:
-
-```text
-Found 20 RSS articles.
-NEW: ...
-Extracted 12345 Finnish chars.
-Sent.
-New articles processed: 1
+```yaml
+OUTPUT_LANGUAGE: ru
 ```
 
-The workflow commits `data/articles.db` after a successful run so future
-runs know which URLs have already been published.
+Change that line to:
 
-### GitHub scheduling
+```yaml
+OUTPUT_LANGUAGE: en
+```
 
-GitHub supports scheduled workflows as frequently as every 5 minutes. This
-project uses every 10 minutes.
+if you want this repository's published Telegram output to be English.
 
-Scheduled workflows run from the repository's default branch.
+This is intentionally separate from the application's default. The source
+code defaults to English so another user can clone the repository and use it
+without unexpectedly getting Russian output.
 
-GitHub says standard GitHub-hosted runner use is free for public repositories.
-GitHub Free also has a monthly allowance for private repositories.
+## Publishing behavior
 
-GitHub may automatically disable scheduled workflows in public repositories
-after 60 days without repository activity, so keep the repository active or
-switch to another hosting method if that becomes relevant.
+On the first successful run, the bot saves all currently visible RSS article
+URLs as a baseline and sends nothing.
 
-## Alternative hosting
+On subsequent runs:
 
-### Render
+```text
+URL already in database → skip
+URL not in database     → translate → summarize → publish → save URL
+```
 
-Render currently offers free web services, but free services can spin down
-when idle, and free background workers are not the right fit for this bot.
-Because this bot is naturally a scheduled job, GitHub Actions is simpler.
+The URL is saved only after Telegram successfully accepts the message. If
+publishing fails, the article remains unprocessed and can be retried on the
+next run.
 
-### Oracle Cloud Free Tier
-
-A free VM can run a normal 24/7 Python process, but setup is more involved and
-free VM capacity can be difficult to obtain.
-
-### Your Mac
-
-Excellent for development/testing, but it must stay running.
+The RSS limit defaults to 20 articles. Increase `RSS_LIMIT` if necessary.
 
 ## Security
 
 Never commit:
 
 - `.env`
-- Telegram bot token
-- Ollama API key
+- Telegram bot tokens
+- Ollama API keys
 
-If a token is accidentally exposed, revoke/rotate it immediately.
+If a secret is exposed, revoke and replace it immediately.
 
 ## Copyright
 
-The bot publishes translated headlines and short summaries plus a link to
+The bot publishes translated headlines and short summaries with a link to
 the original article rather than automatically republishing full articles.
 Check Tamperelainen's terms and applicable copyright rules before public
 distribution.
-
-
-## Publishing behavior
-
-The bot is intentionally designed to publish only new articles.
-
-On the **first successful run**, it creates a baseline from the articles
-currently present in the RSS feed and does NOT publish those existing articles.
-This prevents a fresh deployment from dumping the latest 20 RSS items into
-your Telegram channel.
-
-On later runs:
-
-```text
-RSS article URL already in database -> skip
-RSS article URL not in database   -> translate, summarize, publish, save URL
-```
-
-The workflow runs every 30 minutes.
-
-The processed-article database is committed back to the repository after each
-successful run, so the history survives between GitHub Actions runners.
-
-If more than `RSS_LIMIT` new articles appear between two runs, increase
-`RSS_LIMIT` in the workflow/environment before deploying. The default is 20.
-
-
-## Article images
-
-The scraper looks for the article's `og:image` first and falls back to
-Twitter's image metadata.
-
-If an image is available, Telegram receives it as the post's photo with the
-Russian headline and summary as the caption.
-
-If there is no image, the bot sends the normal text-only message.
-
-Telegram photo captions have a 1024-character limit. The generated message is
-normally well below this; if it ever exceeds the limit, the bot falls back to
-a normal text message so the article is not lost.
-
-## Automatic article categories
-
-The RSS category is no longer shown directly. Ollama Cloud classifies each
-article into one controlled English category:
-
-- 🏙️ Local
-- 🚗 Traffic
-- 🚓 Crime
-- 🏛️ Politics
-- 💼 Business
-- 🏠 Housing
-- 🏥 Health
-- 🎓 Education
-- 🎭 Culture
-- ⚽ Sports
-- 🌦️ Weather
-- 🎉 Events
-- 🍴 Food
-- ✈️ Travel
-- 🌿 Environment
-- 💻 Technology
-- 📰 News
-
-Classification and summarization are returned as structured JSON. Python
-validates the category; an invalid category safely becomes `📰 News`.
-
-
-## Russian output
-
-The Telegram channel output is Russian:
-
-Finnish article
--> Finnish-to-Russian translation
--> Russian title
--> Russian 2-4 sentence summary
--> Russian category
-
-The displayed categories are:
-🏙️ Местные новости, 🚗 Транспорт, 🚓 Происшествия и преступления,
-🏛️ Политика, 💼 Бизнес, 🏠 Недвижимость, 🏥 Здоровье, 🎓 Образование,
-🎭 Культура, ⚽ Спорт, 🌦️ Погода, 🎉 События, 🍴 Еда, ✈️ Путешествия,
-🌿 Экология, 💻 Технологии, 📰 Новости.
-
-Publication timestamps from the RSS feed are formatted as Russian dates,
-for example `11 августа 2026, 18:07`.

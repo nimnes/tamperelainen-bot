@@ -3,31 +3,37 @@ import asyncio
 import html
 from email.utils import parsedate_to_datetime
 
-from config import MAX_ARTICLE_CHARS
+from config import MAX_ARTICLE_CHARS, OUTPUT_LANGUAGE
 from database import init_db, is_processed, mark_processed, any_processed
 from rss import fetch_articles
 from scraper import fetch_article
 from translator import Translator, OllamaCloudEditor
 from telegram_sender import send_message
 
-def format_date_russian(value):
+def format_date(value):
     if not value:
         return ""
     try:
         dt = parsedate_to_datetime(value)
+        if OUTPUT_LANGUAGE == "ru":
+            months = [
+                "января", "февраля", "марта", "апреля", "мая", "июня",
+                "июля", "августа", "сентября", "октября", "ноября", "декабря",
+            ]
+            return f"{dt.day} {months[dt.month - 1]} {dt.year}, {dt:%H:%M}"
         months = [
-            "января", "февраля", "марта", "апреля", "мая", "июня",
-            "июля", "августа", "сентября", "октября", "ноября", "декабря",
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December",
         ]
-        return f"{dt.day} {months[dt.month - 1]} {dt.year}, {dt:%H:%M}"
+        return f"{months[dt.month - 1]} {dt.day}, {dt.year}, {dt:%H:%M}"
     except (TypeError, ValueError, IndexError):
         return value
 
 def build_message(article, title_ru, editorial):
-    published = format_date_russian(article.published)
+    published = format_date(article.published)
     return (
         f"{editorial['category_label']}\n\n"
-        f"🇷🇺 <b>{html.escape(title_ru)}</b>\n\n"
+        f"{'🇷🇺' if OUTPUT_LANGUAGE == 'ru' else '🇬🇧'} <b>{html.escape(title_ru)}</b>\n\n"
         f"{html.escape(editorial['summary'])}\n\n"
         f"🕒 {html.escape(published)}\n\n"
         f'<a href="{html.escape(article.url, quote=True)}">🔗 Read original article</a>'
@@ -75,10 +81,13 @@ def process_once(test=False):
                 asyncio.run(send_message(message, image_url=extracted.get("image_url") or None))
                 print(f"Sent as {editorial['category']}.")
 
-            mark_processed(article.url, article.title, article.published)
+                # Only mark the article after Telegram confirms delivery.
+                # This prevents a failed Telegram send from being treated as processed.
+                mark_processed(article.url, article.title, article.published)
+                print("Saved article as processed.")
 
         except Exception as exc:
-            print(f"ERROR: {exc}")
+            print(f"ERROR processing {article.url}: {exc}")
 
     print(f"New articles processed: {new_count}")
 

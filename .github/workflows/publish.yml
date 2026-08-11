@@ -38,14 +38,26 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
           OLLAMA_MODEL: gpt-oss:20b
+          # This repository publishes Russian. The application default is English.
+          OUTPUT_LANGUAGE: ru
         run: python bot.py --once
 
       - name: Save article database
         run: |
-          if [ -f data/articles.db ]; then
-            git config user.name "tamperelainen-bot"
-            git config user.email "actions@users.noreply.github.com"
-            git add data/articles.db
-            git diff --cached --quiet || git commit -m "Update processed articles"
-            git push
+          if [ ! -f data/articles.db ]; then
+            echo "No database file found; nothing to save."
+            exit 0
           fi
+
+          git config user.name "tamperelainen-bot"
+          git config user.email "actions@users.noreply.github.com"
+
+          git add data/articles.db
+
+          if git diff --cached --quiet; then
+            echo "No database changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Update processed articles"
+          git push
