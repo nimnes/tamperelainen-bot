@@ -258,3 +258,16 @@ The bot publishes translated headlines and short summaries with a link to
 the original article rather than automatically republishing full articles.
 Check Tamperelainen's terms and applicable copyright rules before public
 distribution.
+
+
+### Database persistence
+
+`data/articles.db` is intentionally committed to the repository because
+GitHub Actions runners are ephemeral. The repository's `.gitignore` ignores
+SQLite database files generally, so the workflow uses:
+
+```bash
+git add -f data/articles.db
+```
+
+to force-add only the bot's persistent article database.

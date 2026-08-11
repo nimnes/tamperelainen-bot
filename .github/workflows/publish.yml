@@ -52,7 +52,8 @@ jobs:
           git config user.name "tamperelainen-bot"
           git config user.email "actions@users.noreply.github.com"
 
-          git add data/articles.db
+          # The database is intentionally persisted in Git even though *.db is ignored.
+          git add -f data/articles.db
 
           if git diff --cached --quiet; then
             echo "No database changes to commit."
