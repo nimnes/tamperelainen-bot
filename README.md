@@ -1,0 +1,208 @@
+# Tamperelainen English Telegram Bot
+
+Reads Tamperelainen RSS, fetches each new article, translates it from Finnish
+to English, asks Ollama Cloud for a concise English summary, and publishes the
+summary to Telegram.
+
+RSS:
+https://www.tamperelainen.fi/feed/rss/
+
+## What it publishes
+
+Each new article becomes:
+
+🇬🇧 English headline
+
+2-4 sentence English summary generated from the full article.
+
+📰 Category
+🕒 Publication time
+
+🔗 Read original article
+
+The full article is not republished.
+
+## Local setup/test
+
+Python 3.11+ recommended.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+Set your credentials in `.env`.
+
+Test without sending to Telegram:
+
+```bash
+python bot.py --test
+```
+
+Send one real batch:
+
+```bash
+python bot.py --once
+```
+
+## Ollama Cloud
+
+The project uses Ollama's direct API at:
+
+https://ollama.com/api/chat
+
+Create an Ollama API key at:
+
+https://ollama.com/settings/keys
+
+Then set:
+
+```text
+OLLAMA_API_KEY=...
+```
+
+The default model is:
+
+```text
+gpt-oss:20b
+```
+
+Ollama currently lists `gpt-oss:20b-cloud` as a low-usage cloud model and
+`gpt-oss:120b-cloud` as a medium-usage cloud model. The direct API examples
+use `gpt-oss:20b` with the Ollama Cloud API endpoint, so this project uses
+`gpt-oss:20b`.
+
+Ollama's Free plan is currently $0 and includes access to cloud models, but
+cloud usage is subject to Ollama's current service limits.
+
+## Telegram
+
+Create the bot with BotFather.
+
+Add it as an administrator to your Telegram channel with permission to post.
+
+Set:
+
+```text
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+```
+
+Telegram HTML parse mode is enabled, so `<b>...</b>` is rendered as bold.
+The automatic Finnish webpage preview is disabled because the message already
+contains a dedicated original-article link.
+
+## Free 24/7 hosting: GitHub Actions
+
+This repository contains:
+
+`.github/workflows/publish.yml`
+
+It runs every 10 minutes, then exits. It does not need a permanent server.
+
+Flow:
+
+Tamperelainen RSS
+-> article extraction
+-> Finnish -> English translation
+-> Ollama Cloud summary
+-> Telegram
+-> save processed URL database
+
+### 1. Create a GitHub repository
+
+Create a repository and upload the project files.
+
+A public repository is the simplest option because standard GitHub-hosted
+runners are free for public repositories.
+
+Do NOT put secrets in the repository.
+
+### 2. Add secrets
+
+Open:
+
+Settings -> Secrets and variables -> Actions -> New repository secret
+
+Add:
+
+```text
+TELEGRAM_BOT_TOKEN
+TELEGRAM_CHAT_ID
+OLLAMA_API_KEY
+```
+
+### 3. Enable Actions
+
+Open the Actions tab and enable the workflow if GitHub asks.
+
+Use:
+
+Actions -> Tamperelainen news -> Run workflow
+
+for the first manual test.
+
+### 4. Check the log
+
+A successful run should look roughly like:
+
+```text
+Found 20 RSS articles.
+NEW: ...
+Extracted 12345 Finnish chars.
+Sent.
+New articles processed: 1
+```
+
+The workflow commits `data/articles.db` after a successful run so future
+runs know which URLs have already been published.
+
+### GitHub scheduling
+
+GitHub supports scheduled workflows as frequently as every 5 minutes. This
+project uses every 10 minutes.
+
+Scheduled workflows run from the repository's default branch.
+
+GitHub says standard GitHub-hosted runner use is free for public repositories.
+GitHub Free also has a monthly allowance for private repositories.
+
+GitHub may automatically disable scheduled workflows in public repositories
+after 60 days without repository activity, so keep the repository active or
+switch to another hosting method if that becomes relevant.
+
+## Alternative hosting
+
+### Render
+
+Render currently offers free web services, but free services can spin down
+when idle, and free background workers are not the right fit for this bot.
+Because this bot is naturally a scheduled job, GitHub Actions is simpler.
+
+### Oracle Cloud Free Tier
+
+A free VM can run a normal 24/7 Python process, but setup is more involved and
+free VM capacity can be difficult to obtain.
+
+### Your Mac
+
+Excellent for development/testing, but it must stay running.
+
+## Security
+
+Never commit:
+
+- `.env`
+- Telegram bot token
+- Ollama API key
+
+If a token is accidentally exposed, revoke/rotate it immediately.
+
+## Copyright
+
+The bot publishes translated headlines and short summaries plus a link to
+the original article rather than automatically republishing full articles.
+Check Tamperelainen's terms and applicable copyright rules before public
+distribution.
