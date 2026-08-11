@@ -1,0 +1,50 @@
+name: Tamperelainen news
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tamperelainen-news
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          OLLAMA_MODEL: gpt-oss:20b
+        run: python bot.py --once
+
+      - name: Save article database
+        run: |
+          if [ -f data/articles.db ]; then
+            git config user.name "tamperelainen-bot"
+            git config user.email "actions@users.noreply.github.com"
+            git add data/articles.db
+            git diff --cached --quiet || git commit -m "Update processed articles"
+            git push
+          fi
