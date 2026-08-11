@@ -1,7 +1,7 @@
 # Tamperelainen English Telegram Bot
 
 Reads Tamperelainen RSS, fetches each new article, translates it from Finnish
-to English, asks Ollama Cloud for a concise English summary, and publishes the
+to English, asks Ollama Cloud for a concise Russian summary, and publishes the
 summary to Telegram.
 
 RSS:
@@ -11,9 +11,9 @@ https://www.tamperelainen.fi/feed/rss/
 
 Each new article becomes:
 
-🇬🇧 English headline
+🇬🇧 Russian headline
 
-2-4 sentence English summary generated from the full article.
+2-4 sentence Russian summary generated from the full article.
 
 📰 Category
 🕒 Publication time
@@ -239,7 +239,7 @@ The scraper looks for the article's `og:image` first and falls back to
 Twitter's image metadata.
 
 If an image is available, Telegram receives it as the post's photo with the
-English headline and summary as the caption.
+Russian headline and summary as the caption.
 
 If there is no image, the bot sends the normal text-only message.
 
@@ -272,3 +272,23 @@ article into one controlled English category:
 
 Classification and summarization are returned as structured JSON. Python
 validates the category; an invalid category safely becomes `📰 News`.
+
+
+## Russian output
+
+The Telegram channel output is Russian:
+
+Finnish article
+-> Finnish-to-Russian translation
+-> Russian title
+-> Russian 2-4 sentence summary
+-> Russian category
+
+The displayed categories are:
+🏙️ Местные новости, 🚗 Транспорт, 🚓 Происшествия и преступления,
+🏛️ Политика, 💼 Бизнес, 🏠 Недвижимость, 🏥 Здоровье, 🎓 Образование,
+🎭 Культура, ⚽ Спорт, 🌦️ Погода, 🎉 События, 🍴 Еда, ✈️ Путешествия,
+🌿 Экология, 💻 Технологии, 📰 Новости.
+
+Publication timestamps from the RSS feed are formatted as Russian dates,
+for example `11 августа 2026, 18:07`.

@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import html
+from email.utils import parsedate_to_datetime
 
 from config import MAX_ARTICLE_CHARS
 from database import init_db, is_processed, mark_processed, any_processed
@@ -9,12 +10,26 @@ from scraper import fetch_article
 from translator import Translator, OllamaCloudEditor
 from telegram_sender import send_message
 
-def build_message(article, title_en, editorial):
+def format_date_russian(value):
+    if not value:
+        return ""
+    try:
+        dt = parsedate_to_datetime(value)
+        months = [
+            "января", "февраля", "марта", "апреля", "мая", "июня",
+            "июля", "августа", "сентября", "октября", "ноября", "декабря",
+        ]
+        return f"{dt.day} {months[dt.month - 1]} {dt.year}, {dt:%H:%M}"
+    except (TypeError, ValueError, IndexError):
+        return value
+
+def build_message(article, title_ru, editorial):
+    published = format_date_russian(article.published)
     return (
         f"{editorial['category_label']}\n\n"
-        f"🇬🇧 <b>{html.escape(title_en)}</b>\n\n"
+        f"🇷🇺 <b>{html.escape(title_ru)}</b>\n\n"
         f"{html.escape(editorial['summary'])}\n\n"
-        f"🕒 {html.escape(article.published or '')}\n\n"
+        f"🕒 {html.escape(published)}\n\n"
         f'<a href="{html.escape(article.url, quote=True)}">🔗 Read original article</a>'
     )
 
