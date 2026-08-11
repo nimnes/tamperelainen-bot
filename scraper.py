@@ -47,6 +47,15 @@ def fetch_article(url, fallback_description=""):
     if not title and soup.title:
         title = soup.title.get_text(" ", strip=True)
 
+    image_url = ""
+    image_meta = (
+        soup.find("meta", attrs={"property": "og:image"})
+        or soup.find("meta", attrs={"name": "twitter:image"})
+        or soup.find("meta", attrs={"property": "twitter:image"})
+    )
+    if image_meta and image_meta.get("content"):
+        image_url = image_meta["content"].strip()
+
     description = ""
     meta = soup.find("meta", attrs={"property": "og:description"})
     if meta and meta.get("content"):
@@ -65,5 +74,6 @@ def fetch_article(url, fallback_description=""):
         "title": title,
         "description": description,
         "text": text,
+        "image_url": image_url,
         "url": url,
     }

@@ -3,7 +3,8 @@ name: Tamperelainen news
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/10 * * * *"
+    # Every 30 minutes
+    - cron: "*/30 * * * *"
 
 permissions:
   contents: write

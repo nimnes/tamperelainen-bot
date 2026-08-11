@@ -3,20 +3,19 @@ import asyncio
 import html
 
 from config import MAX_ARTICLE_CHARS
-from database import init_db, is_processed, mark_processed
+from database import init_db, is_processed, mark_processed, any_processed
 from rss import fetch_articles
 from scraper import fetch_article
-from translator import Translator, OllamaCloudSummarizer
+from translator import Translator, OllamaCloudEditor
 from telegram_sender import send_message
 
-def build_message(article, title_en, summary_en):
+def build_message(article, title_en, editorial):
     return (
+        f"{editorial['category_label']}\n\n"
         f"🇬🇧 <b>{html.escape(title_en)}</b>\n\n"
-        f"{html.escape(summary_en)}\n\n"
-        f"📰 {html.escape(article.category or 'News')}\n"
+        f"{html.escape(editorial['summary'])}\n\n"
         f"🕒 {html.escape(article.published or '')}\n\n"
-        f'<a href="{html.escape(article.url, quote=True)}">'
-        f"🔗 Read original article</a>"
+        f'<a href="{html.escape(article.url, quote=True)}">🔗 Read original article</a>'
     )
 
 def process_once(test=False):
@@ -24,8 +23,15 @@ def process_once(test=False):
     articles = fetch_articles()
     print(f"Found {len(articles)} RSS articles.")
 
+    if not any_processed():
+        print("No processed-article history found. Creating initial RSS baseline.")
+        for article in articles:
+            mark_processed(article.url, article.title, article.published)
+        print(f"Baseline saved: {len(articles)} existing articles will not be posted.")
+        return
+
     translator = Translator()
-    summarizer = OllamaCloudSummarizer()
+    editor = OllamaCloudEditor()
     new_count = 0
 
     for article in reversed(articles):
@@ -38,27 +44,21 @@ def process_once(test=False):
         try:
             extracted = fetch_article(article.url, article.description)
             title_fi = extracted["title"] or article.title
-            body_fi = (
-                extracted["text"]
-                or extracted["description"]
-                or article.description
-            )[:MAX_ARTICLE_CHARS]
+            body_fi = (extracted["text"] or extracted["description"] or article.description)[:MAX_ARTICLE_CHARS]
 
             print(f"Extracted {len(body_fi)} Finnish chars.")
-
             title_en = translator.translate(title_fi)
             body_en = translator.translate(body_fi)
-            summary = summarizer.summarize(body_en)
-
-            message = build_message(article, title_en, summary)
+            editorial = editor.classify_and_summarize(body_en)
+            message = build_message(article, title_en, editorial)
 
             if test:
                 print("\n--- TEST MESSAGE ---")
                 print(message)
                 print("--- END TEST MESSAGE ---")
             else:
-                asyncio.run(send_message(message))
-                print("Sent.")
+                asyncio.run(send_message(message, image_url=extracted.get("image_url") or None))
+                print(f"Sent as {editorial['category']}.")
 
             mark_processed(article.url, article.title, article.published)
 
@@ -72,8 +72,6 @@ if __name__ == "__main__":
     parser.add_argument("--test", action="store_true")
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
-
     if not (args.test or args.once):
-        parser.error("Use --test or --once. Continuous hosting is handled by GitHub Actions.")
-
+        parser.error("Use --test or --once.")
     process_once(test=args.test)

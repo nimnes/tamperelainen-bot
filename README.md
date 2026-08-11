@@ -206,3 +206,69 @@ The bot publishes translated headlines and short summaries plus a link to
 the original article rather than automatically republishing full articles.
 Check Tamperelainen's terms and applicable copyright rules before public
 distribution.
+
+
+## Publishing behavior
+
+The bot is intentionally designed to publish only new articles.
+
+On the **first successful run**, it creates a baseline from the articles
+currently present in the RSS feed and does NOT publish those existing articles.
+This prevents a fresh deployment from dumping the latest 20 RSS items into
+your Telegram channel.
+
+On later runs:
+
+```text
+RSS article URL already in database -> skip
+RSS article URL not in database   -> translate, summarize, publish, save URL
+```
+
+The workflow runs every 30 minutes.
+
+The processed-article database is committed back to the repository after each
+successful run, so the history survives between GitHub Actions runners.
+
+If more than `RSS_LIMIT` new articles appear between two runs, increase
+`RSS_LIMIT` in the workflow/environment before deploying. The default is 20.
+
+
+## Article images
+
+The scraper looks for the article's `og:image` first and falls back to
+Twitter's image metadata.
+
+If an image is available, Telegram receives it as the post's photo with the
+English headline and summary as the caption.
+
+If there is no image, the bot sends the normal text-only message.
+
+Telegram photo captions have a 1024-character limit. The generated message is
+normally well below this; if it ever exceeds the limit, the bot falls back to
+a normal text message so the article is not lost.
+
+## Automatic article categories
+
+The RSS category is no longer shown directly. Ollama Cloud classifies each
+article into one controlled English category:
+
+- 🏙️ Local
+- 🚗 Traffic
+- 🚓 Crime
+- 🏛️ Politics
+- 💼 Business
+- 🏠 Housing
+- 🏥 Health
+- 🎓 Education
+- 🎭 Culture
+- ⚽ Sports
+- 🌦️ Weather
+- 🎉 Events
+- 🍴 Food
+- ✈️ Travel
+- 🌿 Environment
+- 💻 Technology
+- 📰 News
+
+Classification and summarization are returned as structured JSON. Python
+validates the category; an invalid category safely becomes `📰 News`.

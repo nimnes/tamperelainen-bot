@@ -23,3 +23,10 @@ def mark_processed(url, title, published=""):
             (url, title, published)
         )
         conn.commit()
+
+
+def any_processed():
+    with sqlite3.connect(DB_PATH) as conn:
+        return conn.execute(
+            "SELECT 1 FROM articles LIMIT 1"
+        ).fetchone() is not None
