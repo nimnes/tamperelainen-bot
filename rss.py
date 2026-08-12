@@ -1,6 +1,9 @@
 import time
-import requests
+from dataclasses import dataclass
+
 import feedparser
+import requests
+
 from config import RSS_URL, RSS_LIMIT
 
 HEADERS = {
@@ -14,17 +17,21 @@ HEADERS = {
 }
 
 
+@dataclass(frozen=True)
+class Article:
+    title: str
+    url: str
+    published: str
+    description: str
+
+
 def fetch_articles():
     last_error = None
 
     # One retry is enough for the occasional transient RSS failure.
     for attempt in range(2):
         try:
-            response = requests.get(
-                RSS_URL,
-                headers=HEADERS,
-                timeout=30,
-            )
+            response = requests.get(RSS_URL, headers=HEADERS, timeout=30)
 
             if response.status_code == 403 and attempt == 0:
                 print("RSS returned HTTP 403. Retrying once in 10 seconds...")
@@ -41,12 +48,14 @@ def fetch_articles():
 
             articles = []
             for entry in feed.entries[:RSS_LIMIT]:
-                articles.append({
-                    "title": entry.get("title", "").strip(),
-                    "url": entry.get("link", "").strip(),
-                    "published": entry.get("published", ""),
-                    "summary": entry.get("summary", ""),
-                })
+                articles.append(
+                    Article(
+                        title=entry.get("title", "").strip(),
+                        url=entry.get("link", "").strip(),
+                        published=entry.get("published", ""),
+                        description=entry.get("summary", ""),
+                    )
+                )
 
             return articles
 
@@ -63,6 +72,5 @@ def fetch_articles():
             break
 
     # A temporary RSS failure should not make the scheduled workflow red.
-    # The next 30-minute run will try again.
     print(f"WARNING: Could not fetch RSS feed: {last_error}")
     return []

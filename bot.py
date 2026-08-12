@@ -10,6 +10,7 @@ from scraper import fetch_article
 from translator import OllamaEditor
 from telegram_sender import send_message
 
+
 def format_date(value):
     if not value:
         return ""
@@ -29,15 +30,22 @@ def format_date(value):
     except (TypeError, ValueError, IndexError):
         return value
 
-def build_message(article, title_ru, editorial):
+
+def build_message(article, editorial):
     published = format_date(article.published)
+    original_label = (
+        "🔗 Читать оригинал статьи"
+        if OUTPUT_LANGUAGE == "ru"
+        else "🔗 Read original article"
+    )
     return (
         f"{editorial['category_label']}\n\n"
-        f"<b>{html.escape(title_ru)}</b>\n\n"
+        f"<b>{html.escape(editorial['title'])}</b>\n\n"
         f"{html.escape(editorial['summary'])}\n\n"
         f"🕒 {html.escape(published)}\n\n"
-        f'<a href="{html.escape(article.url, quote=True)}">{("🔗 Читать оригинал статьи" if OUTPUT_LANGUAGE == "ru" else "🔗 Read original article")}</a>'
+        f'<a href="{html.escape(article.url, quote=True)}">{original_label}</a>'
     )
+
 
 def process_once(test=False):
     init_db()
@@ -64,24 +72,28 @@ def process_once(test=False):
         try:
             extracted = fetch_article(article.url, article.description)
             title_fi = extracted["title"] or article.title
-            body_fi = (extracted["text"] or extracted["description"] or article.description)[:MAX_ARTICLE_CHARS]
+            body_fi = (
+                extracted["text"]
+                or extracted["description"]
+                or article.description
+            )[:MAX_ARTICLE_CHARS]
 
             print(f"Extracted {len(body_fi)} Finnish chars.")
-            title_en = translator.translate(title_fi)
-            body_en = translator.translate(body_fi)
-            editorial = editor.classify_and_summarize(body_en)
-            message = build_message(article, title_en, editorial)
+            editorial = editor.process(title_fi, body_fi)
+            message = build_message(article, editorial)
 
             if test:
                 print("\n--- TEST MESSAGE ---")
                 print(message)
                 print("--- END TEST MESSAGE ---")
             else:
-                asyncio.run(send_message(message, image_url=extracted.get("image_url") or None))
+                asyncio.run(
+                    send_message(
+                        message,
+                        image_url=extracted.get("image_url") or None,
+                    )
+                )
                 print(f"Sent as {editorial['category']}.")
-
-                # Only mark the article after Telegram confirms delivery.
-                # This prevents a failed Telegram send from being treated as processed.
                 mark_processed(article.url, article.title, article.published)
                 print("Saved article as processed.")
 
@@ -89,6 +101,7 @@ def process_once(test=False):
             print(f"ERROR processing {article.url}: {exc}")
 
     print(f"New articles processed: {new_count}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
