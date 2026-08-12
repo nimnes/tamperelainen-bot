@@ -271,3 +271,11 @@ git add -f data/articles.db
 ```
 
 to force-add only the bot's persistent article database.
+
+
+### RSS reliability
+
+The RSS request uses browser-like headers and retries once after a failed
+request. If the feed still cannot be fetched, the bot logs a warning and
+returns no articles instead of failing the GitHub Actions job. The next
+scheduled run will try again.

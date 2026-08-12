@@ -33,10 +33,10 @@ def build_message(article, title_ru, editorial):
     published = format_date(article.published)
     return (
         f"{editorial['category_label']}\n\n"
-        f"{'🇷🇺' if OUTPUT_LANGUAGE == 'ru' else '🇬🇧'} <b>{html.escape(title_ru)}</b>\n\n"
+        f"<b>{html.escape(title_ru)}</b>\n\n"
         f"{html.escape(editorial['summary'])}\n\n"
         f"🕒 {html.escape(published)}\n\n"
-        f'<a href="{html.escape(article.url, quote=True)}">🔗 Read original article</a>'
+        f'<a href="{html.escape(article.url, quote=True)}">{("🔗 Читать оригинал статьи" if OUTPUT_LANGUAGE == "ru" else "🔗 Read original article")}</a>'
     )
 
 def process_once(test=False):

@@ -3,8 +3,9 @@ name: Tamperelainen news
 on:
   workflow_dispatch:
   schedule:
-    # Every 30 minutes
-    - cron: "*/30 * * * *"
+    # Every 30 minutes during the daytime in Finland, avoiding 22:00-07:00 year-round.
+    # GitHub Actions cron schedules are interpreted in UTC.
+    - cron: "*/30 5-18 * * *"
 
 permissions:
   contents: write
