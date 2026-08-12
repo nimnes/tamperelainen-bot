@@ -4,4 +4,3 @@ beautifulsoup4>=4.12.3
 trafilatura>=2.0.0
 python-dotenv>=1.0.1
 python-telegram-bot>=22.0
-deep-translator>=1.11.4

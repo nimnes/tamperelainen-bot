@@ -74,8 +74,8 @@ Save article URL
 - Publishes only articles that have not been processed before.
 - First deployment creates an RSS baseline and does not publish existing
   articles.
-- Translates Finnish to the configured output language.
-- Generates a concise AI summary with Ollama Cloud.
+- Uses Ollama Cloud to translate the Finnish article and generate the final headline and summary directly from the original Finnish text.
+- Generates a concise AI summary and natural translated headline with Ollama Cloud in the same request.
 - Automatically classifies articles.
 - Includes the article's main image when available.
 - Uses Telegram HTML so the title is displayed in bold.
@@ -279,3 +279,11 @@ The RSS request uses browser-like headers and retries once after a failed
 request. If the feed still cannot be fetched, the bot logs a warning and
 returns no articles instead of failing the GitHub Actions job. The next
 scheduled run will try again.
+
+### Translation quality
+
+The original Finnish headline and article are sent directly to Ollama Cloud.
+The model produces the configured-language headline and 2-4 sentence summary
+in one editorial pass, rather than summarizing a separately machine-translated
+article. The prompt instructs it to preserve names, places, numbers, dates,
+attribution and uncertainty while using natural journalistic language.
