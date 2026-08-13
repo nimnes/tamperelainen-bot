@@ -311,3 +311,11 @@ Article images are sent with Telegram's `sendPhoto` using the original
 Telegram may show a cropped preview in the chat depending on the image's
 aspect ratio and the Telegram client. When the user taps the preview,
 Telegram opens the full photo stored for the message.
+
+### Finnish place-name case normalization
+
+The translator normalizes inflected Finnish local place names to their
+nominative/base form before translation. For example, `Vikinsaareen`,
+`Vikinsaaren` and `Vikinsaarella` can become `Vikinsaari` in the translated
+text. This is model-assisted rather than based on a large hardcoded list.
+Major city names remain eligible for normal English/Russian translation.

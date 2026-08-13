@@ -79,6 +79,138 @@ LOCAL_NAME_SUFFIXES = (
 )
 
 
+
+def _canonicalize_local_names(self, title_fi, article_fi):
+    """Find inflected Finnish local proper names and map them to nominative form.
+
+    This is intentionally model-assisted rather than a large hardcoded
+    dictionary. The exact source spelling is replaced with the canonical
+    Finnish form before translation, so Finnish case endings cannot leak into
+    the translated text.
+    """
+    major_cities = set(MAJOR_CITY_TRANSLATIONS.get(OUTPUT_LANGUAGE, {}).keys())
+    source = f"""TITLE:
+{title_fi}
+
+ARTICLE:
+{article_fi}
+"""
+    prompt = f"""Analyze this Finnish local-news article and identify Finnish
+local proper names that appear in an inflected grammatical case.
+
+Return ONLY valid JSON:
+{{"names":[{{"source":"exact form from text","canonical":"nominative/base form"}}]}}
+
+Rules:
+- Include streets, roads, parks, neighborhoods, districts, islands, lakes,
+  squares, stations, stops, venues and other local geographic/proper names.
+- "source" MUST exactly match a form that appears in the supplied Finnish text,
+  including its case ending.
+- "canonical" must be the Finnish dictionary/nominative form of that same name.
+- If the source is already nominative, you may omit it.
+- Do not include ordinary Finnish words.
+- Do not include people's names, companies or organizations.
+- Do not include major cities: {", ".join(sorted(major_cities))}.
+- Do not translate or transliterate anything.
+- Do not invent names.
+- Example: Vikinsaareen -> Vikinsaari; Vikinsaaren -> Vikinsaari;
+  Vikinsaarella -> Vikinsaari; Hämeenkadulla -> Hämeenkatu;
+  Koskipuistossa -> Koskipuisto.
+- Return an empty list if there are no confident matches.
+
+{source}
+"""
+    response = requests.post(
+        self.url,
+        headers={
+            "Authorization": f"Bearer {OLLAMA_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a Finnish linguist specializing in Finnish "
+                        "place names and grammatical cases. Return JSON only."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0.0},
+        },
+        timeout=120,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Ollama local-name API {response.status_code}: {response.text[:500]}"
+        )
+
+    content = (response.json().get("message") or {}).get("content", "").strip()
+    if not content:
+        raise RuntimeError("Ollama returned an empty local-name response.")
+
+    try:
+        result = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Ollama returned invalid local-name JSON: {content}") from exc
+
+    replacements = {}
+    combined = title_fi + "\n" + article_fi
+
+    for item in result.get("names", []):
+        if not isinstance(item, dict):
+            continue
+        source_name = str(item.get("source", "")).strip()
+        canonical = str(item.get("canonical", "")).strip()
+
+        if not source_name or not canonical or source_name == canonical:
+            continue
+        if source_name not in combined:
+            continue
+        if canonical in major_cities:
+            continue
+
+        # Conservative validation: canonical should look like a Finnish proper
+        # name and share substantial lexical material with the source.
+        if not re.search(r"[A-ZÅÄÖ]", canonical):
+            continue
+        src_letters = re.sub(r"[^A-Za-zÅÄÖåäö]", "", source_name).lower()
+        can_letters = re.sub(r"[^A-Za-zÅÄÖåäö]", "", canonical).lower()
+        if len(can_letters) < 4 or len(src_letters) < 4:
+            continue
+        common = 0
+        for a, b in zip(src_letters, can_letters):
+            if a != b:
+                break
+            common += 1
+        if common < max(4, int(min(len(src_letters), len(can_letters)) * 0.55)):
+            continue
+
+        replacements[source_name] = canonical
+
+    # Replace longer forms first and preserve surrounding punctuation/case.
+    protected = title_fi
+    for source_name in sorted(replacements, key=len, reverse=True):
+        protected = re.sub(
+            r"(?<![\wÅÄÖåäö])" + re.escape(source_name) + r"(?![\wÅÄÖåäö])",
+            replacements[source_name],
+            protected,
+        )
+    protected_article = article_fi
+    for source_name in sorted(replacements, key=len, reverse=True):
+        protected_article = re.sub(
+            r"(?<![\wÅÄÖåäö])" + re.escape(source_name) + r"(?![\wÅÄÖåäö])",
+            replacements[source_name],
+            protected_article,
+        )
+
+    return protected, protected_article
+
+
 def _protect_local_names(text):
     """Replace local Finnish names with opaque placeholders before Ollama.
 
@@ -314,8 +446,15 @@ Text:
 
     def process(self, title_fi, article_fi):
         language = "Russian" if OUTPUT_LANGUAGE == "ru" else "English"
-        protected_title, title_names = _protect_local_names(title_fi)
-        protected_article, article_names = _protect_local_names(article_fi)
+
+        # Normalize inflected Finnish local names to their nominative form
+        # before translation (e.g. Vikinsaareen -> Vikinsaari).
+        canonical_title, canonical_article = self._canonicalize_local_names(
+            title_fi, article_fi
+        )
+
+        protected_title, title_names = _protect_local_names(canonical_title)
+        protected_article, article_names = _protect_local_names(canonical_article)
         replacements = {**title_names, **article_names}
 
         prompt = f"""You are a professional Finnish-to-{language} local-news translator and editor.
@@ -359,8 +498,9 @@ PROPER-NAME RULES — STRICT:
 - Only major Finnish cities may use an established {language} form. Do not
   translate smaller localities unless the form is genuinely standard.
 - If unsure whether a name has an established {language} form, keep Finnish.
-- Keep Finnish street suffixes such as -katu, -tie, -kuja, -väylä, -puisto and
-  -järvi unchanged when they are part of a local proper name.
+- Keep the canonical Finnish form of protected local names exactly as supplied.
+- Finnish case endings on local names have already been normalized to the
+  nominative/base form before translation. Do not restore Finnish case endings.
 
 Examples for Russian:
 Tampere -> Тампере
