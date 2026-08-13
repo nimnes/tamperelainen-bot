@@ -12,8 +12,15 @@ async def send_message(text, image_url=None):
 
     bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
-    # Telegram captions are shorter than normal messages.
-    # Keep the full message as a normal message if it is too long.
+    # Option A: keep the original article image as the Telegram photo.
+    # Telegram may crop the thumbnail/preview in the chat UI, but tapping
+    # the preview opens the full photo stored by Telegram.
+    #
+    # We deliberately do not crop, resize, or create a thumbnail ourselves.
+    # This preserves the original aspect ratio and image quality.
+    # Telegram captions are shorter than normal messages; if the caption is
+    # too long, fall back to a normal text message rather than splitting the
+    # article card into separate image/text messages.
     if image_url and len(text) <= 1024:
         await bot.send_photo(
             chat_id=TELEGRAM_CHAT_ID,

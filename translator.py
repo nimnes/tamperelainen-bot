@@ -146,10 +146,10 @@ class OllamaEditor:
         if OUTPUT_LANGUAGE != "ru":
             return title, summary
 
-        for label, text in (("title", title), ("summary", summary)):
+        def repair(text):
             suspicious = _mixed_script_words(text)
             if not suspicious:
-                continue
+                return text
 
             prompt = f"""Fix accidental Latin/Cyrillic mixing in this Russian news text.
 
@@ -176,9 +176,14 @@ Text:
                 json={
                     "model": self.model,
                     "messages": [
-                        {"role": "system", "content":
-                         "You are a Russian proofreader. Fix only accidental "
-                         "Latin/Cyrillic mixing and never alter proper names."},
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a Russian proofreader. Fix only "
+                                "accidental Latin/Cyrillic mixing and never "
+                                "alter proper names."
+                            ),
+                        },
                         {"role": "user", "content": prompt},
                     ],
                     "stream": False,
@@ -191,21 +196,24 @@ Text:
                     f"Ollama script-correction API {response.status_code}: "
                     f"{response.text[:500]}"
                 )
-            corrected = (response.json().get("message") or {}).get("content", "").strip()
+
+            corrected = (
+                (response.json().get("message") or {})
+                .get("content", "")
+                .strip()
+            )
             if not corrected:
                 raise RuntimeError("Ollama returned an empty script correction.")
+
             remaining = _mixed_script_words(corrected)
             if remaining:
                 raise RuntimeError(
                     "Ollama script correction still contains mixed-script words: "
                     + ", ".join(remaining)
                 )
-            if label == "title":
-                title = corrected
-            else:
-                summary = corrected
+            return corrected
 
-        return title, summary
+        return repair(title), repair(summary)
 
     def process(self, title_fi, article_fi):
         language = "Russian" if OUTPUT_LANGUAGE == "ru" else "English"

@@ -302,3 +302,12 @@ Russian output is checked for accidental words containing both Latin and
 Cyrillic characters, such as `оazис`. If detected, Ollama corrects only the
 accidental script mixing while preserving Finnish proper names, brands,
 abbreviations and intentionally Latin text.
+
+### Telegram image handling
+
+Article images are sent with Telegram's `sendPhoto` using the original
+`og:image` URL. The bot does not crop, resize, or generate thumbnails.
+
+Telegram may show a cropped preview in the chat depending on the image's
+aspect ratio and the Telegram client. When the user taps the preview,
+Telegram opens the full photo stored for the message.
