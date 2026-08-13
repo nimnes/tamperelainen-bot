@@ -128,6 +128,28 @@ def _restore_local_names(text, replacements):
 _CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 _LATIN_RE = re.compile(r"[A-Za-z]")
 
+# Finnish administrative terms that should normally be translated rather than
+# preserved as local proper names. The unique proper names surrounding them
+# remain protected separately.
+_FINNISH_ADMIN_TERMS = (
+    "lautakunta", "lautakunnan", "jaosto", "jaostolle", "jaostossa",
+    "yhdyskuntalautakunta", "yhdyskuntalautakunnan",
+    "kaupunginvaltuusto", "kaupunginvaltuuston",
+    "kaupunginhallitus", "kaupunginhallituksen",
+    "ympäristöterveydenhuolto", "ympäristöterveydenhuollon",
+    "kaupunkikehitys", "kaupunkikehityksen",
+    "virasto", "viraston", "osasto", "osaston",
+    "toimiala", "toimialan", "hallinto", "hallinnon",
+)
+
+def _finnish_admin_terms(text):
+    lowered = text.lower()
+    return sorted({
+        term for term in _FINNISH_ADMIN_TERMS
+        if re.search(r"(?<![A-Za-zÅÄÖåäö])" + re.escape(term) +
+                     r"(?![A-Za-zÅÄÖåäö])", lowered)
+    })
+
 def _mixed_script_words(text):
     words = re.findall(r"[A-Za-zА-Яа-яЁёÀ-ÖØ-öø-ÿĀ-ž'-]+", text)
     return [w for w in words if _CYRILLIC_RE.search(w) and _LATIN_RE.search(w)]
@@ -215,6 +237,81 @@ Text:
 
         return repair(title), repair(summary)
 
+    def _repair_finnish_administrative_terms(self, title, summary):
+        """Translate leftover Finnish administrative terminology in Russian."""
+        if OUTPUT_LANGUAGE != "ru":
+            return title, summary
+
+        def repair(text):
+            suspicious = _finnish_admin_terms(text)
+            if not suspicious:
+                return text
+
+            prompt = f"""Edit this Russian local-news text.
+
+Finnish administrative terminology was accidentally left untranslated.
+
+Detected terms: {", ".join(suspicious)}
+
+Rules:
+- Translate Finnish municipal/governmental administrative terminology into
+  natural Russian.
+- Translate the function/type of the body, not a unique local proper name.
+- Terms such as lautakunta mean a municipal committee/board and jaosto means a
+  committee/subcommittee section; translate them naturally in context.
+- Keep actual proper names such as Tampere, street names, businesses,
+  organizations, venues, brands and personal names unchanged.
+- Preserve all facts, numbers, dates and meaning.
+- Do not invent an official Russian name; use a clear descriptive translation.
+- Do not rewrite already-correct Russian.
+- Return ONLY the corrected text.
+
+Text:
+{text}
+"""
+            response = requests.post(
+                self.url,
+                headers={
+                    "Authorization": f"Bearer {OLLAMA_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are a Russian local-news editor. "
+                                "Translate leftover Finnish administrative "
+                                "terminology while preserving proper names."
+                            ),
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    "stream": False,
+                    "options": {"temperature": 0.0},
+                },
+                timeout=120,
+            )
+            if response.status_code >= 400:
+                raise RuntimeError(
+                    f"Ollama administrative-term API {response.status_code}: "
+                    f"{response.text[:500]}"
+                )
+
+            corrected = (
+                (response.json().get("message") or {})
+                .get("content", "")
+                .strip()
+            )
+            if not corrected:
+                raise RuntimeError(
+                    "Ollama returned an empty administrative-term correction."
+                )
+            return corrected
+
+        return repair(title), repair(summary)
+
     def process(self, title_fi, article_fi):
         language = "Russian" if OUTPUT_LANGUAGE == "ru" else "English"
         protected_title, title_names = _protect_local_names(title_fi)
@@ -249,8 +346,16 @@ PROPER-NAME RULES — STRICT:
 - NEVER translate a Finnish local compound name merely because it looks like an
   ordinary Finnish word. For example, Koskipuisto is a proper place name, not
   something to translate as "Rapids Park".
-- Keep local businesses, organizations and institutions in their original form
-  unless there is a clearly established official {language} name.
+- Keep the names of local businesses, associations, companies, organizations
+  and venues in their original form unless there is a clearly established
+  official {language} name.
+- Do NOT keep Finnish municipal/governmental administrative body names merely
+  because they are long or look like proper names. Translate their descriptive
+  function into natural {language}. This includes committees, boards,
+  departments, divisions and subcommittees (for example Finnish terms such as
+  lautakunta, jaosto, yhdyskuntalautakunta and ympäristöterveydenhuolto).
+- Keep the unique place name within such a body name when appropriate (for
+  example Tampere), but translate the administrative function around it.
 - Only major Finnish cities may use an established {language} form. Do not
   translate smaller localities unless the form is genuinely standard.
 - If unsure whether a name has an established {language} form, keep Finnish.
@@ -333,6 +438,7 @@ Finnish article:
         if not title or not summary:
             raise RuntimeError("Ollama returned an empty title or summary.")
 
+        title, summary = self._repair_finnish_administrative_terms(title, summary)
         title, summary = self._repair_mixed_scripts(title, summary)
 
         title = _restore_local_names(title, replacements)
