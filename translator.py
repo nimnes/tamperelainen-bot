@@ -16,7 +16,7 @@ CATEGORY_LABELS = {
     },
     "ru": {
         "LOCAL": "🏙️ Местные новости", "TRAFFIC": "🚗 Транспорт",
-        "CRIME": "🚓 Происшествия и преступления", "POLITICS": "🏛️ Политика",
+        "CRIME": "🚓 Происшествия", "POLITICS": "🏛️ Политика",
         "BUSINESS": "💼 Бизнес", "HOUSING": "🏠 Недвижимость", "HEALTH": "🏥 Здоровье",
         "EDUCATION": "🎓 Образование", "CULTURE": "🎭 Культура", "SPORTS": "⚽ Спорт",
         "WEATHER": "🌦️ Погода", "EVENTS": "🎉 События", "FOOD": "🍴 Еда",
@@ -25,22 +25,22 @@ CATEGORY_LABELS = {
     },
 }
 
-CATEGORY_DEFINITIONS = """LOCAL = general local news that does not fit a more specific category
-TRAFFIC = roads, public transport, accidents, parking, cycling infrastructure
-CRIME = police, crimes, arrests, courts, suspected offences
-POLITICS = politicians, elections, city council, public policy
-BUSINESS = companies, jobs, commerce, economy, entrepreneurship
-HOUSING = homes, apartments, residential construction, rents, real estate
-HEALTH = hospitals, healthcare, diseases, public health
-EDUCATION = schools, universities, students, teaching
-CULTURE = arts, music, theatre, museums, books, film
-SPORTS = sports, teams, athletes, competitions
-WEATHER = weather, forecasts, storms, seasonal conditions
-EVENTS = festivals, concerts, fairs and other events
-FOOD = restaurants, food, cooking, groceries
+CATEGORY_DEFINITIONS = """LOCAL = general local news that does not fit any more specific category
+TRAFFIC = roads, public transport, traffic changes, parking, cycling infrastructure and traffic accidents
+CRIME = police, criminal investigations, arrests, courts, fires, rescue services and other incidents
+POLITICS = politicians, elections, city council, municipal decisions and public policy
+BUSINESS = companies, jobs, shops, commerce, economy and entrepreneurship
+HOUSING = homes, apartments, residential construction, rents and real estate
+HEALTH = hospitals, healthcare, diseases and public health
+EDUCATION = schools, universities, students and teaching
+CULTURE = arts, music, theatre, museums, books and film
+SPORTS = sports, teams, athletes and competitions
+WEATHER = weather, forecasts, storms and seasonal conditions
+EVENTS = festivals, concerts, fairs and other public events
+FOOD = restaurants, food, cooking and groceries
 TRAVEL = travel and tourism
-ENVIRONMENT = nature, climate, pollution, conservation
-TECHNOLOGY = technology, software, digital services
+ENVIRONMENT = nature, climate, pollution and conservation
+TECHNOLOGY = technology, software and digital services
 OTHER = none of the above"""
 
 
@@ -61,20 +61,45 @@ The source article is Finnish. Create a natural {language} version for readers
 interested in Tampere, Finland.
 
 Return ONLY valid JSON in exactly this shape:
-{{"title":"...","summary":"...","category":"LOCAL"}}
+{{"title":"...","summary":"...","category":"<CATEGORY>"}}
 
-Rules:
+TRANSLATION RULES:
 - Understand the Finnish text before writing; do not translate word-for-word.
-- Write a natural journalistic headline in {language}.
+- Write a natural, concise journalistic headline in {language}.
 - Write a concise 2-4 sentence summary in {language}.
-- Preserve names, places, organizations, numbers, dates and times accurately.
-- Preserve uncertainty and attribution; never turn allegations into facts.
-- Do not invent, infer, or embellish facts.
-- The headline should be informative, not clickbait.
-- Do not include HTML tags.
-- Choose exactly one category from the list below.
+- Do not invent, infer, embellish or omit important facts.
+- Preserve uncertainty and attribution; never turn allegations or speculation into facts.
+- Preserve numbers, dates, times and factual details accurately.
 
-Categories:
+PROPER-NAME AND PLACE-NAME RULES:
+- NEVER translate or alter people's names. Keep the original Finnish spelling,
+  including ä, ö, å and other diacritics.
+- NEVER translate Finnish street, road, square, park, neighborhood, district,
+  building, venue or local geographic names. Keep names such as Hämeenkatu,
+  Aleksanterinkatu, Pyynikintie and Näsijärvi in their original Finnish form.
+- Keep local business, organization and institution names in their original form
+  unless there is a clearly established official name in {language}.
+- Major Finnish cities may use their well-established {language} names when one
+  exists (for example Tampere -> Tampere in English, Tampere -> Тампере in Russian;
+  Helsinki -> Helsinki in English, Helsinki -> Хельсинки in Russian).
+- Smaller places should normally remain in Finnish unless there is a widely
+  established standard name in {language}.
+- Do not transliterate Finnish proper names merely to make them look local.
+- If unsure whether a word is a proper name, KEEP THE ORIGINAL FINNISH FORM.
+- Street suffixes such as -katu, -tie and -kuja must remain unchanged.
+
+CATEGORY RULES:
+- First identify the MAIN SUBJECT of the article.
+- Choose the MOST SPECIFIC category that describes the main subject.
+- Do NOT choose LOCAL merely because the article is about Tampere or another
+  Finnish city. LOCAL is a FALLBACK category only when no specific category fits.
+- A mention of a category does not make it the category. Classify by the main
+  focus of the story.
+- Examples: a tram or road story -> TRAFFIC; police investigation -> CRIME;
+  restaurant -> FOOD; school -> EDUCATION; sports match -> SPORTS; city council
+  decision -> POLITICS; theatre/concert -> CULTURE; apartment development -> HOUSING.
+- Choose exactly ONE category from this list:
+
 {CATEGORY_DEFINITIONS}
 
 Finnish headline:
@@ -97,7 +122,8 @@ Finnish article:
                         "role": "system",
                         "content": (
                             f"You are a precise Finnish-to-{language} news translator "
-                            "and editor. Return valid JSON only."
+                            "and editor. Return valid JSON only. Preserve proper names. "
+                            "Choose the most specific category, using LOCAL only as a fallback."
                         ),
                     },
                     {"role": "user", "content": prompt},
