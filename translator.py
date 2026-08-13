@@ -324,16 +324,19 @@ Finnish article:
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"Ollama returned invalid JSON: {content}") from exc
 
-        title, summary = self._repair_mixed_scripts(title, summary)
-
         category = str(result.get("category", "OTHER")).upper().strip()
         if category not in CATEGORY_LABELS[OUTPUT_LANGUAGE]:
             category = "OTHER"
 
-        title = _restore_local_names(html_lib.unescape(str(result.get("title", "")).strip()), replacements)
-        summary = _restore_local_names(html_lib.unescape(str(result.get("summary", "")).strip()), replacements)
+        title = html_lib.unescape(str(result.get("title", "")).strip())
+        summary = html_lib.unescape(str(result.get("summary", "")).strip())
         if not title or not summary:
             raise RuntimeError("Ollama returned an empty title or summary.")
+
+        title, summary = self._repair_mixed_scripts(title, summary)
+
+        title = _restore_local_names(title, replacements)
+        summary = _restore_local_names(summary, replacements)
 
         return {
             "title": title,
