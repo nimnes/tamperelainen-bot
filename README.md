@@ -295,3 +295,10 @@ the translation. They are restored afterwards in their original Finnish form.
 An explicit major-city allowlist permits established translations such as
 Tampere -> Тампере and Helsinki -> Хельсинки in Russian. When uncertain, the
 bot keeps the Finnish name.
+
+### Mixed-script protection
+
+Russian output is checked for accidental words containing both Latin and
+Cyrillic characters, such as `оazис`. If detected, Ollama corrects only the
+accidental script mixing while preserving Finnish proper names, brands,
+abbreviations and intentionally Latin text.

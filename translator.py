@@ -124,6 +124,15 @@ def _restore_local_names(text, replacements):
     return text
 
 
+
+_CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
+_LATIN_RE = re.compile(r"[A-Za-z]")
+
+def _mixed_script_words(text):
+    words = re.findall(r"[A-Za-zА-Яа-яЁёÀ-ÖØ-öø-ÿĀ-ž'-]+", text)
+    return [w for w in words if _CYRILLIC_RE.search(w) and _LATIN_RE.search(w)]
+
+
 class OllamaEditor:
     """Translate, summarize and classify the original Finnish article in one request."""
 
@@ -132,6 +141,71 @@ class OllamaEditor:
             raise RuntimeError("OLLAMA_API_KEY is missing.")
         self.url = OLLAMA_URL.rstrip("/") + "/chat"
         self.model = OLLAMA_MODEL
+
+    def _repair_mixed_scripts(self, title, summary):
+        if OUTPUT_LANGUAGE != "ru":
+            return title, summary
+
+        for label, text in (("title", title), ("summary", summary)):
+            suspicious = _mixed_script_words(text)
+            if not suspicious:
+                continue
+
+            prompt = f"""Fix accidental Latin/Cyrillic mixing in this Russian news text.
+
+Suspicious words: {", ".join(suspicious)}
+
+Rules:
+- Fix only accidental mixed-script Russian words.
+- Russian words must use Cyrillic.
+- Never translate, transliterate or alter proper names.
+- Never alter Finnish place names, street names, businesses, venues, brands,
+  abbreviations, URLs, numbers, or intentionally Latin text.
+- Keep all facts, meaning and punctuation unchanged.
+- Return ONLY the corrected text.
+
+Text:
+{text}
+"""
+            response = requests.post(
+                self.url,
+                headers={
+                    "Authorization": f"Bearer {OLLAMA_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": "system", "content":
+                         "You are a Russian proofreader. Fix only accidental "
+                         "Latin/Cyrillic mixing and never alter proper names."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "stream": False,
+                    "options": {"temperature": 0.0},
+                },
+                timeout=120,
+            )
+            if response.status_code >= 400:
+                raise RuntimeError(
+                    f"Ollama script-correction API {response.status_code}: "
+                    f"{response.text[:500]}"
+                )
+            corrected = (response.json().get("message") or {}).get("content", "").strip()
+            if not corrected:
+                raise RuntimeError("Ollama returned an empty script correction.")
+            remaining = _mixed_script_words(corrected)
+            if remaining:
+                raise RuntimeError(
+                    "Ollama script correction still contains mixed-script words: "
+                    + ", ".join(remaining)
+                )
+            if label == "title":
+                title = corrected
+            else:
+                summary = corrected
+
+        return title, summary
 
     def process(self, title_fi, article_fi):
         language = "Russian" if OUTPUT_LANGUAGE == "ru" else "English"
@@ -241,6 +315,8 @@ Finnish article:
             result = json.loads(content)
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"Ollama returned invalid JSON: {content}") from exc
+
+        title, summary = self._repair_mixed_scripts(title, summary)
 
         category = str(result.get("category", "OTHER")).upper().strip()
         if category not in CATEGORY_LABELS[OUTPUT_LANGUAGE]:
