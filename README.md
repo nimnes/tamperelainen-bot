@@ -285,3 +285,13 @@ scheduled run will try again.
 The bot sends the original Finnish headline and article text directly to
 Ollama Cloud. Ollama produces the translated headline, 2-4 sentence summary,
 and category in one request. No separate translation service is required.
+
+### Proper-name protection
+
+Local Finnish place names are protected before the Ollama request. Known
+Tampere-area names such as Tullin, Koskipuisto, Hervannan Duo, Hämeenkatu and
+Pyynikintie are replaced with immutable placeholders while Ollama generates
+the translation. They are restored afterwards in their original Finnish form.
+An explicit major-city allowlist permits established translations such as
+Tampere -> Тампере and Helsinki -> Хельсинки in Russian. When uncertain, the
+bot keeps the Finnish name.
