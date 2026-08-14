@@ -33,6 +33,45 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Restore article database
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DB_RELEASE_TAG: articles-db
+        run: |
+          mkdir -p data
+
+          # The release asset is the persistent source of truth for articles.db.
+          # If the release does not exist yet, keep the checked-out database as the
+          # migration seed. This preserves the existing history on the first run.
+          if gh release view "$DB_RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Restoring articles.db from GitHub Release $DB_RELEASE_TAG"
+            rm -f data/articles.db
+            gh release download "$DB_RELEASE_TAG" \
+              --pattern articles.db \
+              --dir data \
+              --clobber
+          elif [ -f data/articles.db ]; then
+            echo "No database release exists yet; using the repository database as migration seed."
+          else
+            echo "No existing database found; the bot will create a new one."
+          fi
+
+      - name: Stop tracking article database
+        run: |
+          # .gitignore prevents future tracking, while this removes the file from
+          # the repository index if older versions of the bot committed it.
+          git rm --cached --ignore-unmatch data/articles.db
+
+          if git diff --cached --quiet; then
+            echo "articles.db is already untracked."
+            exit 0
+          fi
+
+          git config user.name "tamperelainen-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "Stop tracking article database"
+          git push
+
       - name: Run bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -43,23 +82,26 @@ jobs:
           OUTPUT_LANGUAGE: ru
         run: python bot.py --once
 
-      - name: Save article database
+      - name: Persist article database to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DB_RELEASE_TAG: articles-db
         run: |
           if [ ! -f data/articles.db ]; then
-            echo "No database file found; nothing to save."
-            exit 0
+            echo "ERROR: data/articles.db was not created."
+            exit 1
           fi
 
-          git config user.name "tamperelainen-bot"
-          git config user.email "actions@users.noreply.github.com"
-
-          # The database is intentionally persisted in Git even though *.db is ignored.
-          git add -f data/articles.db
-
-          if git diff --cached --quiet; then
-            echo "No database changes to commit."
-            exit 0
+          # A fixed release/tag is used as durable storage. The asset is replaced
+          # atomically from the workflow's point of view and is not committed to Git.
+          if gh release view "$DB_RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Updating existing database release."
+          else
+            echo "Creating database release."
+            gh release create "$DB_RELEASE_TAG" \
+              --title "Persistent article database" \
+              --notes "Persistent SQLite state for the Tamperelainen Telegram bot. This release asset is managed automatically by GitHub Actions."
           fi
 
-          git commit -m "Update processed articles"
-          git push
+          gh release upload "$DB_RELEASE_TAG" data/articles.db --clobber
+          echo "articles.db persisted to GitHub Release $DB_RELEASE_TAG."
