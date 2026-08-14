@@ -157,6 +157,35 @@ def _mixed_script_words(text):
 
 
 class OllamaEditor:
+    def _ollama_request(self, payload, timeout=180, retries=1, operation="Ollama"):
+        """Call Ollama Cloud with a single retry for transient failures."""
+        last_error = None
+        for attempt in range(retries + 1):
+            try:
+                response = requests.post(
+                    self.url,
+                    headers={
+                        "Authorization": f"Bearer {OLLAMA_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                    stream=False,
+                    timeout=timeout,
+                )
+                response.raise_for_status()
+                return response
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+                last_error = exc
+                if attempt < retries:
+                    print(f"WARNING: {operation} failed ({exc}); retrying once...")
+                    continue
+                raise RuntimeError(
+                    f"{operation} failed after {retries + 1} attempts: {exc}"
+                ) from exc
+            except requests.exceptions.RequestException as exc:
+                raise RuntimeError(f"{operation} failed: {exc}") from exc
+
+
     def _canonicalize_local_names(self, title_fi, article_fi):
         """Find inflected Finnish local proper names and map them to nominative form.
 
@@ -197,13 +226,8 @@ class OllamaEditor:
 
     {source}
     """
-        response = requests.post(
-            self.url,
-            headers={
-                "Authorization": f"Bearer {OLLAMA_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
+        response = self._ollama_request(
+            {
                 "model": self.model,
                 "messages": [
                     {
@@ -219,7 +243,9 @@ class OllamaEditor:
                 "format": "json",
                 "options": {"temperature": 0.0},
             },
-            timeout=120,
+            timeout=90,
+            retries=1,
+            operation="Local-name canonicalization",
         )
         if response.status_code >= 400:
             raise RuntimeError(
@@ -449,9 +475,16 @@ Text:
 
         # Normalize inflected Finnish local names to their nominative form
         # before translation (e.g. Vikinsaareen -> Vikinsaari).
-        canonical_title, canonical_article = self._canonicalize_local_names(
-            title_fi, article_fi
-        )
+        try:
+            canonical_title, canonical_article = self._canonicalize_local_names(
+                title_fi, article_fi
+            )
+        except Exception as exc:
+            print(
+                f"WARNING: Local-name canonicalization failed; "
+                f"continuing without it: {exc}"
+            )
+            canonical_title, canonical_article = title_fi, article_fi
 
         protected_title, title_names = _protect_local_names(canonical_title)
         protected_article, article_names = _protect_local_names(canonical_article)
@@ -532,13 +565,8 @@ Finnish article:
 {protected_article}
 """
 
-        response = requests.post(
-            self.url,
-            headers={
-                "Authorization": f"Bearer {OLLAMA_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
+        response = self._ollama_request(
+            {
                 "model": self.model,
                 "messages": [
                     {
@@ -556,6 +584,8 @@ Finnish article:
                 "options": {"temperature": 0.1},
             },
             timeout=180,
+            retries=1,
+            operation="Translation",
         )
         if response.status_code >= 400:
             raise RuntimeError(f"Ollama API {response.status_code}: {response.text[:500]}")
@@ -579,7 +609,13 @@ Finnish article:
             raise RuntimeError("Ollama returned an empty title or summary.")
 
         title, summary = self._repair_finnish_administrative_terms(title, summary)
-        title, summary = self._repair_mixed_scripts(title, summary)
+        try:
+            title, summary = self._repair_mixed_scripts(title, summary)
+        except Exception as exc:
+            print(
+                f"WARNING: Mixed-script correction failed; "
+                f"using the current translation: {exc}"
+            )
 
         title = _restore_local_names(title, replacements)
         summary = _restore_local_names(summary, replacements)

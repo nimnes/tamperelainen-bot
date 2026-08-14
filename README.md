@@ -319,3 +319,11 @@ nominative/base form before translation. For example, `Vikinsaareen`,
 `Vikinsaaren` and `Vikinsaarella` can become `Vikinsaari` in the translated
 text. This is model-assisted rather than based on a large hardcoded list.
 Major city names remain eligible for normal English/Russian translation.
+
+### Ollama Cloud resilience
+
+Ollama Cloud requests use one retry for transient connection and timeout
+failures. Local-name canonicalization has a 90-second timeout and is
+non-fatal; if it fails, the existing name-protection path is used. Main
+translation has a 180-second timeout and one retry. Optional mixed-script
+correction is also non-fatal.
