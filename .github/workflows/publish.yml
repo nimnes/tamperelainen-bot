@@ -38,7 +38,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
-          OLLAMA_MODEL: gpt-oss:20b
+          OLLAMA_MODEL: qwen3:30b
           # This repository publishes Russian. The application default is English.
           OUTPUT_LANGUAGE: ru
         run: python bot.py --once

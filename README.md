@@ -174,7 +174,7 @@ OLLAMA_API_KEY=...
 The default model is:
 
 ```text
-gpt-oss:20b
+qwen3:30b
 ```
 
 ## Telegram
@@ -349,3 +349,7 @@ Fixes Ollama Cloud endpoint construction. `OLLAMA_URL` may be set to
 `https://ollama.com/api` as before; the bot now automatically uses
 `https://ollama.com/api/chat`. If `/chat` is already present, it is not added
 twice. No GitHub secret change is required.
+
+## v27
+
+Switches the default Ollama model to `qwen3:30b`, which Ollama documents as supporting multilingual instruction following and translation across 100+ languages. Qwen 3 supports explicit thinking control; the bot disables thinking for the structured translation/correction requests so the JSON response remains focused on the final content.
