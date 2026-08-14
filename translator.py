@@ -115,6 +115,40 @@ def _protect_local_names(text, replacements=None):
     protected = text
 
     candidates = sorted(KNOWN_LOCAL_NAMES, key=len, reverse=True)
+
+    # Finnish street and other cadastral names are commonly inflected.
+    # For example, "X-katu" -> "X-kadulla", "X-kadulle", "X-kadulta".
+    # The official Finnish language guidance identifies katu, tie, kuja, polku,
+    # kaari, linja, raitti, rinne, ranta and väylä among common name elements.
+    # Protect these forms before the LLM sees them.
+    inflected_local_pattern = re.compile(
+        r"\b(?:"
+        r"[A-ZÅÄÖ][\wÅÄÖåäö-]*(?:\s+[A-ZÅÄÖ][\wÅÄÖåäö-]*){0,5}"
+        r"|[A-ZÅÄÖ][\wÅÄÖåäö-]*"
+        r")"
+        r"(?:"
+        r"kadulla|kadulle|kadulta|kadun|kadussa|kadusta|katuun|kadut|"
+        r"teillä|teille|teiltä|tien|tiellä|tiellä|tiehen|tiestä|"
+        r"kujalla|kujalle|kujalta|kujan|kujassa|kujasta|kujaan|"
+        r"polulla|polulle|polulta|polun|polussa|polusta|polkuun|"
+        r"kaarella|kaarelle|kaarelta|kaaren|kaaressa|kaaresta|kaareen|"
+        r"linjalla|linjalle|linjalta|linjan|linjassa|linjasta|linjaan|"
+        r"raitilla|raitille|raitilta|raitin|raitissa|raitista|raittiin|"
+        r"rinteellä|rinteelle|rinteeltä|rinteen|rinteessä|rinteestä|rinteeseen|"
+        r"rannalla|rannalle|rannalta|rannan|rannassa|rannasta|rantaan|"
+        r"väylällä|väylälle|väylältä|väylän|väylässä|väylästä|väylään"
+        r")\b",
+        re.UNICODE,
+    )
+
+    # Capture the whole name ending in the inflected place-name element.
+    # This supplements, rather than replaces, the known-name list.
+    for match in inflected_local_pattern.finditer(text):
+        value = match.group(0)
+        if value not in replacements and len(value) > 4:
+            placeholder = f"[[[LOCAL_NAME_{len(replacements)}]]]"
+            replacements[placeholder] = value
+            protected = protected.replace(value, placeholder)
     if candidates:
         pattern = re.compile(
             r"(?<![\wÅÄÖåäö])(?:" + "|".join(re.escape(x) for x in candidates) + r")(?![\wÅÄÖåäö])",
