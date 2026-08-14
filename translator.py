@@ -103,14 +103,15 @@ def _parse_json_response(content: str) -> dict:
 
     return result
 
-def _protect_local_names(text):
+def _protect_local_names(text, replacements=None):
     """Replace local Finnish names with opaque placeholders before Ollama.
 
     This is deliberately done before the model sees the text. Prompt-only
     instructions are not sufficient for names such as Koskipuisto, which can
     look like an ordinary Finnish compound word to a language model.
     """
-    replacements = {}
+    if replacements is None:
+        replacements = {}
     protected = text
 
     candidates = sorted(KNOWN_LOCAL_NAMES, key=len, reverse=True)
@@ -312,9 +313,16 @@ Summary:
         # Local-name normalization is handled by the main translation prompt.
         canonical_title, canonical_article = title_fi, article_fi
 
-        protected_title, title_names = _protect_local_names(canonical_title)
-        protected_article, article_names = _protect_local_names(canonical_article)
-        replacements = {**title_names, **article_names}
+        # Share one replacement dictionary so title and article placeholders
+        # always have unique IDs. Otherwise both calls start at LOCAL_NAME_0
+        # and the second dictionary overwrites the first replacement.
+        replacements = {}
+        protected_title, replacements = _protect_local_names(
+            canonical_title, replacements
+        )
+        protected_article, replacements = _protect_local_names(
+            canonical_article, replacements
+        )
 
         prompt = f"""You are a professional Finnish-to-{language} local-news translator and editor.
 
