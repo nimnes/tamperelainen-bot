@@ -290,7 +290,7 @@ Summary:
             raise RuntimeError("Ollama returned an empty administrative-term correction.")
 
         try:
-            result = json.loads(content)
+            result = _parse_json_response(content)
         except json.JSONDecodeError as exc:
             raise RuntimeError(
                 f"Ollama returned invalid administrative-term JSON: {content}"
@@ -434,7 +434,7 @@ Additional rules:
             raise RuntimeError("Ollama returned an empty editor response.")
 
         try:
-            result = json.loads(content)
+            result = _parse_json_response(content)
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"Ollama returned invalid JSON: {content}") from exc
 
