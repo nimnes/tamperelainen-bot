@@ -158,7 +158,8 @@ def _mixed_script_words(text):
 
 class OllamaEditor:
     def __init__(self):
-        self.url = OLLAMA_URL
+        base_url = OLLAMA_URL.rstrip("/")
+        self.url = base_url if base_url.endswith("/chat") else base_url + "/chat"
         self.model = OLLAMA_MODEL
 
 

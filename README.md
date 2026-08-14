@@ -342,3 +342,10 @@ Fixes the v23 runtime error where `OllamaEditor` had no `model` attribute.
 `OllamaEditor` now initializes both `self.url` from `OLLAMA_URL` and
 `self.model` from `OLLAMA_MODEL`. The main Ollama translation request is
 limited to a 90-second timeout with one retry.
+
+## v25
+
+Fixes Ollama Cloud endpoint construction. `OLLAMA_URL` may be set to
+`https://ollama.com/api` as before; the bot now automatically uses
+`https://ollama.com/api/chat`. If `/chat` is already present, it is not added
+twice. No GitHub secret change is required.
