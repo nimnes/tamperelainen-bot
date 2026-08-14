@@ -8,7 +8,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "https://ollama.com/api")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss:120b-cloud")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:cloud")
 OUTPUT_LANGUAGE = os.getenv("OUTPUT_LANGUAGE", "en").lower().strip()
 if OUTPUT_LANGUAGE not in {"en", "ru"}:
     raise ValueError("OUTPUT_LANGUAGE must be either en or ru.")
