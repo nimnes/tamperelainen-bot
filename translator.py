@@ -192,6 +192,94 @@ class OllamaEditor:
                 raise RuntimeError(f"{operation} failed: {exc}") from exc
 
 
+    def _repair_finnish_administrative_terms(self, title, summary):
+        """Run a targeted second pass when Finnish administrative terms remain.
+
+        The main translation intentionally protects local proper names. That can
+        sometimes cause long Finnish municipal body names to survive translation.
+        This pass asks Ollama to translate only administrative terminology while
+        preserving actual names and protected local-name placeholders.
+        """
+        if OUTPUT_LANGUAGE not in ("ru", "en"):
+            return title, summary
+
+        if not (_finnish_admin_terms(title) or _finnish_admin_terms(summary)):
+            return title, summary
+
+        language = "Russian" if OUTPUT_LANGUAGE == "ru" else "English"
+        prompt = f"""You are correcting a Finnish-to-{language} local-news translation.
+
+Translate ONLY Finnish municipal, governmental and administrative terminology
+that was accidentally left untranslated. Do not rewrite facts or style unless
+needed to make the administrative phrase grammatical and natural.
+
+STRICT RULES:
+- Return ONLY valid JSON in exactly this shape:
+  {{"title":"...","summary":"..."}}
+- Translate Finnish terms such as lautakunta (committee/board), jaosto
+  (subcommittee/division), yhdyskuntalautakunta (urban development committee),
+  ympäristöterveydenhuolto (environmental health services), kaupunginvaltuusto
+  (city council), kaupunginhallitus (city government/municipal executive board),
+  virasto (agency), osasto (department) and similar administrative terminology.
+- Preserve actual names of people, companies, associations, venues and places.
+- Preserve protected tokens such as [[[LOCAL_NAME_0]]] exactly. Never translate,
+  remove or alter them.
+- Translate Finnish grammatical case endings as part of the phrase; do not leave
+  Finnish inflections attached to an otherwise translated administrative term.
+- Keep Tampere as Tampere in English and as Тампере in Russian.
+- Do not translate street names, parks, neighborhoods or other local place names.
+- Do not introduce information that is not present in the input.
+- Do not leave any Finnish administrative terminology in the output when it can
+  be translated naturally.
+
+Title:
+{title}
+
+Summary:
+{summary}
+"""
+
+        response = self._ollama_request(
+            {
+                "model": self.model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            f"You are a precise Finnish-to-{language} translation "
+                            "corrector. Preserve names and protected tokens. Return JSON only."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0.0},
+            },
+            timeout=60,
+            retries=1,
+            operation="Administrative-term correction",
+        )
+
+        content = (response.json().get("message") or {}).get("content", "").strip()
+        if not content:
+            raise RuntimeError("Ollama returned an empty administrative-term correction.")
+
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Ollama returned invalid administrative-term JSON: {content}"
+            ) from exc
+
+        corrected_title = html_lib.unescape(str(result.get("title", title)).strip())
+        corrected_summary = html_lib.unescape(str(result.get("summary", summary)).strip())
+
+        if not corrected_title or not corrected_summary:
+            raise RuntimeError("Ollama returned an empty administrative-term correction.")
+
+        return corrected_title, corrected_summary
+
     def process(self, title_fi, article_fi):
         language = "Russian" if OUTPUT_LANGUAGE == "ru" else "English"
 
