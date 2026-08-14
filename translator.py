@@ -80,6 +80,29 @@ LOCAL_NAME_SUFFIXES = (
 
 
 
+
+def _parse_json_response(content: str) -> dict:
+    """Parse an Ollama JSON response, tolerating Markdown code fences."""
+    cleaned = content.strip()
+
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, count=1, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```\s*$", "", cleaned, count=1)
+
+    try:
+        result = json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start < 0 or end <= start:
+            raise
+        result = json.loads(cleaned[start:end + 1])
+
+    if not isinstance(result, dict):
+        raise RuntimeError("Ollama returned JSON, but it is not an object.")
+
+    return result
+
 def _protect_local_names(text):
     """Replace local Finnish names with opaque placeholders before Ollama.
 
