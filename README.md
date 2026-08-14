@@ -174,7 +174,7 @@ OLLAMA_API_KEY=...
 The default model is:
 
 ```text
-qwen3.5:cloud
+gemma4:31b-cloud
 ```
 
 ## Telegram
@@ -352,4 +352,4 @@ twice. No GitHub secret change is required.
 
 ## v27
 
-Switches the default Ollama model to `qwen3.5:cloud`. Ollama lists this as an official Cloud model with 128K context and Medium Usage. The bot uses the Ollama Cloud API and disables thinking for the structured translation/correction requests so the JSON response remains focused on the final content.
+Switches the default Ollama model to `gemma4:31b-cloud`. Ollama lists this as an official Cloud model with 128K context and Medium Usage. The bot uses the Ollama Cloud API and disables thinking for the structured translation/correction requests so the JSON response remains focused on the final content.
