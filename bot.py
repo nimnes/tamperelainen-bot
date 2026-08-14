@@ -64,7 +64,7 @@ def process_once(test=False):
 
             mark_processed(article.url, article.title, article.published)
         print(f"Baseline saved: {len(articles)} existing articles will not be posted.")
-        return
+        return 0
 
     editor = OllamaEditor()
     new_count = 0
@@ -73,7 +73,6 @@ def process_once(test=False):
         if is_processed(article.url):
             continue
 
-        new_count += 1
         print(f"NEW: {article.title}\n{article.url}")
 
         try:
@@ -102,12 +101,14 @@ def process_once(test=False):
                 )
                 print(f"Sent as {editorial['category']}.")
                 mark_processed(article.url, article.title, article.published)
+                new_count += 1
                 print("Saved article as processed.")
 
         except Exception as exc:
             print(f"ERROR processing {article.url}: {exc}")
 
     print(f"New articles processed: {new_count}")
+    return new_count
 
 
 if __name__ == "__main__":
@@ -117,4 +118,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if not (args.test or args.once):
         parser.error("Use --test or --once.")
-    process_once(test=args.test)
+    new_articles = process_once(test=args.test)
+    print(f"NEW_ARTICLES={new_articles}")
+
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if github_output:
+        with open(github_output, "a", encoding="utf-8") as output:
+            output.write(f"new_articles={new_articles}\\n")

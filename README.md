@@ -96,7 +96,7 @@ The workflow:
 3. Runs the bot.
 4. Uploads the updated database back to the same release.
 
-The database therefore survives between GitHub Actions runners without generating Git commits for every run.
+The database therefore survives between GitHub Actions runners without generating Git commits for every run. The release is updated only when at least one new article is successfully published; runs with no new articles leave the existing database release unchanged.
 
 The workflow needs repository contents write permission to maintain the `articles-db` release.
 

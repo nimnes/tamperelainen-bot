@@ -73,6 +73,7 @@ jobs:
           git push
 
       - name: Run bot
+        id: run_bot
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -83,6 +84,7 @@ jobs:
         run: python bot.py --once
 
       - name: Persist article database to GitHub Release
+        if: steps.run_bot.outputs.new_articles != '0'
         env:
           GH_TOKEN: ${{ github.token }}
           DB_RELEASE_TAG: articles-db
