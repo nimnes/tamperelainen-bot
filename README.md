@@ -353,3 +353,31 @@ twice. No GitHub secret change is required.
 ## v27
 
 Switches the default Ollama model to `gemma4:31b-cloud`. Ollama lists this as an official Cloud model with 128K context and Medium Usage. The bot uses the Ollama Cloud API and disables thinking for the structured translation/correction requests so the JSON response remains focused on the final content.
+
+## Article database
+
+The bot keeps track of processed articles in `data/articles.db`.
+
+The database is **runtime state and is not stored in the Git repository**. GitHub Actions restores the database from the dedicated GitHub Release:
+
+- Release/tag: `articles-db`
+- Asset: `articles.db`
+
+After each successful run, the updated database is uploaded back to the same release, replacing the previous asset. This prevents `articles.db` from creating a new Git commit on every scheduled run.
+
+On the first v35 run, if the `articles-db` release does not exist yet, the workflow can migrate the existing `data/articles.db` from the repository into the release. After migration, `data/` can remain untracked.
+
+The workflow creates `data/` automatically with `mkdir -p data`, so `data/.gitkeep` is not required.
+
+### Repository setup
+
+Do **not** commit `data/articles.db` or `data/.gitkeep`.
+
+The recommended `.gitignore` entry is:
+
+```gitignore
+data/
+```
+
+The GitHub Actions workflow requires permission to write repository contents because it manages the `articles-db` release.
+
