@@ -1,383 +1,146 @@
-# Tamperelainen News Telegram Bot
+# Tamperelainen Telegram Bot
 
-A small Python bot that monitors the Tamperelainen RSS feed, fetches new
-articles, translates them, creates a short AI-generated summary, classifies
-the article, and publishes the result to Telegram.
+A Telegram bot that monitors **Tamperelainen** news, translates and summarizes new articles with **Ollama Cloud**, and publishes the results to a Telegram channel.
 
-RSS source:
+## Main features
 
-https://www.tamperelainen.fi/feed/rss/
+- Reads new articles from Tamperelainen RSS feeds.
+- Extracts the article text from the original website.
+- Translates Finnish articles to the configured output language.
+- Generates a concise translated title and summary.
+- Categorizes articles for Telegram publishing.
+- Preserves local names and administrative terms during translation.
+- Publishes formatted articles to Telegram.
+- Tracks already processed article URLs to avoid duplicate posts.
+- Runs automatically through GitHub Actions.
 
-## Output language
-
-The bot is **English by default**.
-
-Set the `OUTPUT_LANGUAGE` environment variable to change the output language:
-
-```text
-OUTPUT_LANGUAGE=en
-```
-
-or:
-
-```text
-OUTPUT_LANGUAGE=ru
-```
-
-Only `en` and `ru` are currently supported.
-
-This repository's GitHub Actions workflow explicitly sets:
-
-```yaml
-OUTPUT_LANGUAGE: ru
-```
-
-Therefore **this repository publishes Russian**, while someone cloning the
-repository and running the bot without setting `OUTPUT_LANGUAGE` gets English
-output by default.
-
-For local use, put the setting in `.env`:
-
-```text
-OUTPUT_LANGUAGE=ru
-```
-
-or:
-
-```text
-OUTPUT_LANGUAGE=en
-```
-
-## Processing flow
+## Architecture
 
 ```text
 Tamperelainen RSS
-       ↓
-Find new article
-       ↓
-Fetch full article
-       ↓
-Finnish → configured output language
-       ↓
+        │
+        ▼
+RSS / article extraction
+        │
+        ▼
+Local-name protection
+        │
+        ▼
 Ollama Cloud
-       ├── category
-       └── 2-4 sentence summary
-       ↓
-Telegram
-       ↓
-Save article URL
+(translation + summary + category)
+        │
+        ▼
+Placeholder restoration / validation
+        │
+        ▼
+Telegram channel
 ```
 
-## Features
+Processed article URLs are stored in a runtime SQLite database at `data/articles.db`. The database is not stored in Git. GitHub Actions persists it as the `articles.db` asset of the dedicated `articles-db` GitHub Release.
 
-- Checks Tamperelainen every 30 minutes on GitHub Actions.
-- Publishes only articles that have not been processed before.
-- First deployment creates an RSS baseline and does not publish existing
-  articles.
-- Translates Finnish to the configured output language.
-- Generates a concise AI summary with Ollama Cloud.
-- Automatically classifies articles.
-- Includes the article's main image when available.
-- Uses Telegram HTML so the title is displayed in bold.
-- Includes a link to the original article.
-- Stores processed URLs in `data/articles.db`.
-- GitHub Actions commits the database so duplicate tracking survives between
-  runners.
-- An article is marked as processed only after Telegram delivery succeeds.
-- The database save step exits cleanly when there are no database changes.
-- GitHub Actions uses Node-24-compatible `actions/checkout@v5` and
-  `actions/setup-python@v6`.
+## Requirements
 
-## Categories
+- Python 3.11+ (use the version configured by the GitHub Actions workflow for CI)
+- A Telegram bot and target Telegram channel
+- An Ollama Cloud account/API access
+- An Ollama Cloud model available to your account
+- GitHub repository with Actions enabled for scheduled execution
 
-The classifier uses a controlled set of categories:
+## Configuration
 
-- 🏙️ Local / Местные новости
-- 🚗 Traffic / Транспорт
-- 🚓 Crime / Происшествия и преступления
-- 🏛️ Politics / Политика
-- 💼 Business / Бизнес
-- 🏠 Housing / Недвижимость
-- 🏥 Health / Здоровье
-- 🎓 Education / Образование
-- 🎭 Culture / Культура
-- ⚽ Sports / Спорт
-- 🌦️ Weather / Погода
-- 🎉 Events / События
-- 🍴 Food / Еда
-- ✈️ Travel / Путешествия
-- 🌿 Environment / Экология
-- 💻 Technology / Технологии
-- 📰 News / Новости
+Configuration is provided through environment variables / repository secrets.
 
-The category is returned by Ollama as a controlled identifier such as
-`TRAFFIC`, then Python maps it to the configured language's display label.
-Invalid categories fall back to `News`.
+The main settings include:
 
-## Local setup
+| Setting | Purpose |
+| --- | --- |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token |
+| `TELEGRAM_CHANNEL_ID` | Target Telegram channel |
+| `OLLAMA_API_KEY` | Ollama Cloud API key |
+| `OLLAMA_URL` | Ollama API endpoint |
+| `OLLAMA_MODEL` | Ollama Cloud model used for translation and summarization |
+| `OUTPUT_LANGUAGE` | Language used for generated Telegram content |
 
-Python 3.11+ is recommended.
+Do not commit API keys, Telegram tokens, or other secrets to the repository.
+
+## Local installation
+
+Clone the repository and install the Python dependencies:
 
 ```bash
-python3 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
 ```
 
-Set:
+On Windows PowerShell:
 
-```text
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_CHAT_ID=...
-OLLAMA_API_KEY=...
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
-The default is English:
+Set the required environment variables and run the bot using the project's main entry point.
 
-```text
-OUTPUT_LANGUAGE=en
-```
+The bot creates its runtime database under `data/` automatically.
 
-To use Russian:
+## GitHub Actions
 
-```text
-OUTPUT_LANGUAGE=ru
-```
+The bot is designed to run automatically from GitHub Actions.
 
-Test without sending to Telegram:
+The workflow:
 
-```bash
-python bot.py --test
-```
+1. Restores the persistent `articles.db` from the `articles-db` GitHub Release.
+2. Creates the runtime `data/` directory when necessary.
+3. Runs the bot.
+4. Uploads the updated database back to the same release.
 
-Run one real batch:
+The database therefore survives between GitHub Actions runners without generating Git commits for every run.
 
-```bash
-python bot.py --once
-```
+The workflow needs repository contents write permission to maintain the `articles-db` release.
 
-## Ollama Cloud
+## Database persistence
 
-The bot uses Ollama's direct API.
+`data/` is runtime state and should not be committed.
 
-Create an API key:
-
-https://ollama.com/settings/keys
-
-Set:
-
-```text
-OLLAMA_API_KEY=...
-```
-
-The default model is:
-
-```text
-gemma4:31b-cloud
-```
-
-## Telegram
-
-Create a bot with BotFather and give it permission to post to your channel.
-
-Set:
-
-```text
-TELEGRAM_BOT_TOKEN=...
-TELEGRAM_CHAT_ID=...
-```
-
-## GitHub Actions deployment
-
-The included workflow is:
-
-```text
-.github/workflows/publish.yml
-```
-
-It runs every 30 minutes.
-
-Add these repository secrets:
-
-```text
-TELEGRAM_BOT_TOKEN
-TELEGRAM_CHAT_ID
-OLLAMA_API_KEY
-```
-
-The workflow also contains:
-
-```yaml
-OUTPUT_LANGUAGE: ru
-```
-
-Change that line to:
-
-```yaml
-OUTPUT_LANGUAGE: en
-```
-
-if you want this repository's published Telegram output to be English.
-
-This is intentionally separate from the application's default. The source
-code defaults to English so another user can clone the repository and use it
-without unexpectedly getting Russian output.
-
-## Publishing behavior
-
-On the first successful run, the bot saves all currently visible RSS article
-URLs as a baseline and sends nothing.
-
-On subsequent runs:
-
-```text
-URL already in database → skip
-URL not in database     → translate → summarize → publish → save URL
-```
-
-The URL is saved only after Telegram successfully accepts the message. If
-publishing fails, the article remains unprocessed and can be retried on the
-next run.
-
-The RSS limit defaults to 20 articles. Increase `RSS_LIMIT` if necessary.
-
-## Security
-
-Never commit:
-
-- `.env`
-- Telegram bot tokens
-- Ollama API keys
-
-If a secret is exposed, revoke and replace it immediately.
-
-## Copyright
-
-The bot publishes translated headlines and short summaries with a link to
-the original article rather than automatically republishing full articles.
-Check Tamperelainen's terms and applicable copyright rules before public
-distribution.
-
-
-### Database persistence
-
-`data/articles.db` is intentionally committed to the repository because
-GitHub Actions runners are ephemeral. The repository's `.gitignore` ignores
-SQLite database files generally, so the workflow uses:
-
-```bash
-git add -f data/articles.db
-```
-
-to force-add only the bot's persistent article database.
-
-
-### RSS reliability
-
-The RSS request uses browser-like headers and retries once after a failed
-request. If the feed still cannot be fetched, the bot logs a warning and
-returns no articles instead of failing the GitHub Actions job. The next
-scheduled run will try again.
-
-### Translation pipeline
-
-The bot sends the original Finnish headline and article text directly to
-Ollama Cloud. Ollama produces the translated headline, 2-4 sentence summary,
-and category in one request. No separate translation service is required.
-
-### Proper-name protection
-
-Local Finnish place names are protected before the Ollama request. Known
-Tampere-area names such as Tullin, Koskipuisto, Hervannan Duo, Hämeenkatu and
-Pyynikintie are replaced with immutable placeholders while Ollama generates
-the translation. They are restored afterwards in their original Finnish form.
-An explicit major-city allowlist permits established translations such as
-Tampere -> Тампере and Helsinki -> Хельсинки in Russian. When uncertain, the
-bot keeps the Finnish name.
-
-### Mixed-script protection
-
-Russian output is checked for accidental words containing both Latin and
-Cyrillic characters, such as `оazис`. If detected, Ollama corrects only the
-accidental script mixing while preserving Finnish proper names, brands,
-abbreviations and intentionally Latin text.
-
-### Telegram image handling
-
-Article images are sent with Telegram's `sendPhoto` using the original
-`og:image` URL. The bot does not crop, resize, or generate thumbnails.
-
-Telegram may show a cropped preview in the chat depending on the image's
-aspect ratio and the Telegram client. When the user taps the preview,
-Telegram opens the full photo stored for the message.
-
-### Finnish place-name case normalization
-
-The translator normalizes inflected Finnish local place names to their
-nominative/base form before translation. For example, `Vikinsaareen`,
-`Vikinsaaren` and `Vikinsaarella` can become `Vikinsaari` in the translated
-text. This is model-assisted rather than based on a large hardcoded list.
-Major city names remain eligible for normal English/Russian translation.
-
-### Ollama Cloud resilience
-
-Ollama Cloud requests use one retry for transient connection and timeout
-failures. Local-name canonicalization has a 90-second timeout and is
-non-fatal; if it fails, the existing name-protection path is used. Main
-translation has a 180-second timeout and one retry. Optional mixed-script
-correction is also non-fatal.
-
-### Runtime and Ollama efficiency
-
-Place-name normalization and mixed-script prevention are now handled inside
-the main Ollama translation request instead of separate LLM calls. The main
-Ollama request has a 90-second timeout and one retry. The bot also limits each
-run to 5 articles by default; set `MAX_ARTICLES_PER_RUN` to change this.
-Remaining articles are processed on later scheduled runs.
-
-## v24
-
-Fixes the v23 runtime error where `OllamaEditor` had no `model` attribute.
-`OllamaEditor` now initializes both `self.url` from `OLLAMA_URL` and
-`self.model` from `OLLAMA_MODEL`. The main Ollama translation request is
-limited to a 90-second timeout with one retry.
-
-## v25
-
-Fixes Ollama Cloud endpoint construction. `OLLAMA_URL` may be set to
-`https://ollama.com/api` as before; the bot now automatically uses
-`https://ollama.com/api/chat`. If `/chat` is already present, it is not added
-twice. No GitHub secret change is required.
-
-## v27
-
-Switches the default Ollama model to `gemma4:31b-cloud`. Ollama lists this as an official Cloud model with 128K context and Medium Usage. The bot uses the Ollama Cloud API and disables thinking for the structured translation/correction requests so the JSON response remains focused on the final content.
-
-## Article database
-
-The bot keeps track of processed articles in `data/articles.db`.
-
-The database is **runtime state and is not stored in the Git repository**. GitHub Actions restores the database from the dedicated GitHub Release:
-
-- Release/tag: `articles-db`
-- Asset: `articles.db`
-
-After each successful run, the updated database is uploaded back to the same release, replacing the previous asset. This prevents `articles.db` from creating a new Git commit on every scheduled run.
-
-On the first v35 run, if the `articles-db` release does not exist yet, the workflow can migrate the existing `data/articles.db` from the repository into the release. After migration, `data/` can remain untracked.
-
-The workflow creates `data/` automatically with `mkdir -p data`, so `data/.gitkeep` is not required.
-
-### Repository setup
-
-Do **not** commit `data/articles.db` or `data/.gitkeep`.
-
-The recommended `.gitignore` entry is:
+Recommended `.gitignore` entry:
 
 ```gitignore
 data/
 ```
 
-The GitHub Actions workflow requires permission to write repository contents because it manages the `articles-db` release.
+The persistent database is stored as:
 
+```text
+GitHub Release: articles-db
+└── articles.db
+```
+
+The first deployment can migrate an existing database from the repository into this storage mechanism.
+
+## Project structure
+
+```text
+.
+├── .github/
+│   └── workflows/       # GitHub Actions workflow
+├── data/                # Runtime database; not tracked by Git
+├── README.md
+├── requirements.txt
+└── *.py                 # Bot and processing modules
+```
+
+## Development
+
+For local development, run the bot directly after configuring the required environment variables.
+
+Before submitting changes, verify that the Python sources compile successfully:
+
+```bash
+python -m compileall .
+```
+
+## License
+
+See the repository for the applicable project license.
