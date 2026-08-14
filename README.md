@@ -335,3 +335,10 @@ the main Ollama translation request instead of separate LLM calls. The main
 Ollama request has a 90-second timeout and one retry. The bot also limits each
 run to 5 articles by default; set `MAX_ARTICLES_PER_RUN` to change this.
 Remaining articles are processed on later scheduled runs.
+
+## v24
+
+Fixes the v23 runtime error where `OllamaEditor` had no `model` attribute.
+`OllamaEditor` now initializes both `self.url` from `OLLAMA_URL` and
+`self.model` from `OLLAMA_MODEL`. The main Ollama translation request is
+limited to a 90-second timeout with one retry.

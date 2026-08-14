@@ -157,6 +157,11 @@ def _mixed_script_words(text):
 
 
 class OllamaEditor:
+    def __init__(self):
+        self.url = OLLAMA_URL
+        self.model = OLLAMA_MODEL
+
+
     def _ollama_request(self, payload, timeout=180, retries=1, operation="Ollama"):
         """Call Ollama Cloud with a single retry for transient failures."""
         last_error = None
@@ -303,7 +308,7 @@ Additional rules:
                 "format": "json",
                 "options": {"temperature": 0.1},
             },
-            timeout=180,
+            timeout=90,
             retries=1,
             operation="Translation",
         )
