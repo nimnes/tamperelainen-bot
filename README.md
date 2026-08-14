@@ -327,3 +327,11 @@ failures. Local-name canonicalization has a 90-second timeout and is
 non-fatal; if it fails, the existing name-protection path is used. Main
 translation has a 180-second timeout and one retry. Optional mixed-script
 correction is also non-fatal.
+
+### Runtime and Ollama efficiency
+
+Place-name normalization and mixed-script prevention are now handled inside
+the main Ollama translation request instead of separate LLM calls. The main
+Ollama request has a 90-second timeout and one retry. The bot also limits each
+run to 5 articles by default; set `MAX_ARTICLES_PER_RUN` to change this.
+Remaining articles are processed on later scheduled runs.

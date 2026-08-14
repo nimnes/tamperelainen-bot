@@ -186,305 +186,13 @@ class OllamaEditor:
                 raise RuntimeError(f"{operation} failed: {exc}") from exc
 
 
-    def _canonicalize_local_names(self, title_fi, article_fi):
-        """Find inflected Finnish local proper names and map them to nominative form.
-
-        This is intentionally model-assisted rather than a large hardcoded
-        dictionary. The exact source spelling is replaced with the canonical
-        Finnish form before translation, so Finnish case endings cannot leak into
-        the translated text.
-        """
-        major_cities = set(MAJOR_CITY_TRANSLATIONS.get(OUTPUT_LANGUAGE, {}).keys())
-        source = f"""TITLE:
-    {title_fi}
-
-    ARTICLE:
-    {article_fi}
-    """
-        prompt = f"""Analyze this Finnish local-news article and identify Finnish
-    local proper names that appear in an inflected grammatical case.
-
-    Return ONLY valid JSON:
-    {{"names":[{{"source":"exact form from text","canonical":"nominative/base form"}}]}}
-
-    Rules:
-    - Include streets, roads, parks, neighborhoods, districts, islands, lakes,
-      squares, stations, stops, venues and other local geographic/proper names.
-    - "source" MUST exactly match a form that appears in the supplied Finnish text,
-      including its case ending.
-    - "canonical" must be the Finnish dictionary/nominative form of that same name.
-    - If the source is already nominative, you may omit it.
-    - Do not include ordinary Finnish words.
-    - Do not include people's names, companies or organizations.
-    - Do not include major cities: {", ".join(sorted(major_cities))}.
-    - Do not translate or transliterate anything.
-    - Do not invent names.
-    - Example: Vikinsaareen -> Vikinsaari; Vikinsaaren -> Vikinsaari;
-      Vikinsaarella -> Vikinsaari; Hämeenkadulla -> Hämeenkatu;
-      Koskipuistossa -> Koskipuisto.
-    - Return an empty list if there are no confident matches.
-
-    {source}
-    """
-        response = self._ollama_request(
-            {
-                "model": self.model,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a Finnish linguist specializing in Finnish "
-                            "place names and grammatical cases. Return JSON only."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                "stream": False,
-                "format": "json",
-                "options": {"temperature": 0.0},
-            },
-            timeout=90,
-            retries=1,
-            operation="Local-name canonicalization",
-        )
-        if response.status_code >= 400:
-            raise RuntimeError(
-                f"Ollama local-name API {response.status_code}: {response.text[:500]}"
-            )
-
-        content = (response.json().get("message") or {}).get("content", "").strip()
-        if not content:
-            raise RuntimeError("Ollama returned an empty local-name response.")
-
-        try:
-            result = json.loads(content)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Ollama returned invalid local-name JSON: {content}") from exc
-
-        replacements = {}
-        combined = title_fi + "\n" + article_fi
-
-        for item in result.get("names", []):
-            if not isinstance(item, dict):
-                continue
-            source_name = str(item.get("source", "")).strip()
-            canonical = str(item.get("canonical", "")).strip()
-
-            if not source_name or not canonical or source_name == canonical:
-                continue
-            if source_name not in combined:
-                continue
-            if canonical in major_cities:
-                continue
-
-            # Conservative validation: canonical should look like a Finnish proper
-            # name and share substantial lexical material with the source.
-            if not re.search(r"[A-ZÅÄÖ]", canonical):
-                continue
-            src_letters = re.sub(r"[^A-Za-zÅÄÖåäö]", "", source_name).lower()
-            can_letters = re.sub(r"[^A-Za-zÅÄÖåäö]", "", canonical).lower()
-            if len(can_letters) < 4 or len(src_letters) < 4:
-                continue
-            common = 0
-            for a, b in zip(src_letters, can_letters):
-                if a != b:
-                    break
-                common += 1
-            if common < max(4, int(min(len(src_letters), len(can_letters)) * 0.55)):
-                continue
-
-            replacements[source_name] = canonical
-
-        # Replace longer forms first and preserve surrounding punctuation/case.
-        protected = title_fi
-        for source_name in sorted(replacements, key=len, reverse=True):
-            protected = re.sub(
-                r"(?<![\wÅÄÖåäö])" + re.escape(source_name) + r"(?![\wÅÄÖåäö])",
-                replacements[source_name],
-                protected,
-            )
-        protected_article = article_fi
-        for source_name in sorted(replacements, key=len, reverse=True):
-            protected_article = re.sub(
-                r"(?<![\wÅÄÖåäö])" + re.escape(source_name) + r"(?![\wÅÄÖåäö])",
-                replacements[source_name],
-                protected_article,
-            )
-
-        return protected, protected_article
-
-
-    """Translate, summarize and classify the original Finnish article in one request."""
-
-    def __init__(self):
-        if not OLLAMA_API_KEY:
-            raise RuntimeError("OLLAMA_API_KEY is missing.")
-        self.url = OLLAMA_URL.rstrip("/") + "/chat"
-        self.model = OLLAMA_MODEL
-
-    def _repair_mixed_scripts(self, title, summary):
-        if OUTPUT_LANGUAGE != "ru":
-            return title, summary
-
-        def repair(text):
-            suspicious = _mixed_script_words(text)
-            if not suspicious:
-                return text
-
-            prompt = f"""Fix accidental Latin/Cyrillic mixing in this Russian news text.
-
-Suspicious words: {", ".join(suspicious)}
-
-Rules:
-- Fix only accidental mixed-script Russian words.
-- Russian words must use Cyrillic.
-- Never translate, transliterate or alter proper names.
-- Never alter Finnish place names, street names, businesses, venues, brands,
-  abbreviations, URLs, numbers, or intentionally Latin text.
-- Keep all facts, meaning and punctuation unchanged.
-- Return ONLY the corrected text.
-
-Text:
-{text}
-"""
-            response = requests.post(
-                self.url,
-                headers={
-                    "Authorization": f"Bearer {OLLAMA_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a Russian proofreader. Fix only "
-                                "accidental Latin/Cyrillic mixing and never "
-                                "alter proper names."
-                            ),
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "stream": False,
-                    "options": {"temperature": 0.0},
-                },
-                timeout=120,
-            )
-            if response.status_code >= 400:
-                raise RuntimeError(
-                    f"Ollama script-correction API {response.status_code}: "
-                    f"{response.text[:500]}"
-                )
-
-            corrected = (
-                (response.json().get("message") or {})
-                .get("content", "")
-                .strip()
-            )
-            if not corrected:
-                raise RuntimeError("Ollama returned an empty script correction.")
-
-            remaining = _mixed_script_words(corrected)
-            if remaining:
-                raise RuntimeError(
-                    "Ollama script correction still contains mixed-script words: "
-                    + ", ".join(remaining)
-                )
-            return corrected
-
-        return repair(title), repair(summary)
-
-    def _repair_finnish_administrative_terms(self, title, summary):
-        """Translate leftover Finnish administrative terminology in Russian."""
-        if OUTPUT_LANGUAGE != "ru":
-            return title, summary
-
-        def repair(text):
-            suspicious = _finnish_admin_terms(text)
-            if not suspicious:
-                return text
-
-            prompt = f"""Edit this Russian local-news text.
-
-Finnish administrative terminology was accidentally left untranslated.
-
-Detected terms: {", ".join(suspicious)}
-
-Rules:
-- Translate Finnish municipal/governmental administrative terminology into
-  natural Russian.
-- Translate the function/type of the body, not a unique local proper name.
-- Terms such as lautakunta mean a municipal committee/board and jaosto means a
-  committee/subcommittee section; translate them naturally in context.
-- Keep actual proper names such as Tampere, street names, businesses,
-  organizations, venues, brands and personal names unchanged.
-- Preserve all facts, numbers, dates and meaning.
-- Do not invent an official Russian name; use a clear descriptive translation.
-- Do not rewrite already-correct Russian.
-- Return ONLY the corrected text.
-
-Text:
-{text}
-"""
-            response = requests.post(
-                self.url,
-                headers={
-                    "Authorization": f"Bearer {OLLAMA_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.model,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": (
-                                "You are a Russian local-news editor. "
-                                "Translate leftover Finnish administrative "
-                                "terminology while preserving proper names."
-                            ),
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "stream": False,
-                    "options": {"temperature": 0.0},
-                },
-                timeout=120,
-            )
-            if response.status_code >= 400:
-                raise RuntimeError(
-                    f"Ollama administrative-term API {response.status_code}: "
-                    f"{response.text[:500]}"
-                )
-
-            corrected = (
-                (response.json().get("message") or {})
-                .get("content", "")
-                .strip()
-            )
-            if not corrected:
-                raise RuntimeError(
-                    "Ollama returned an empty administrative-term correction."
-                )
-            return corrected
-
-        return repair(title), repair(summary)
-
     def process(self, title_fi, article_fi):
         language = "Russian" if OUTPUT_LANGUAGE == "ru" else "English"
 
         # Normalize inflected Finnish local names to their nominative form
         # before translation (e.g. Vikinsaareen -> Vikinsaari).
-        try:
-            canonical_title, canonical_article = self._canonicalize_local_names(
-                title_fi, article_fi
-            )
-        except Exception as exc:
-            print(
-                f"WARNING: Local-name canonicalization failed; "
-                f"continuing without it: {exc}"
-            )
-            canonical_title, canonical_article = title_fi, article_fi
+        # Local-name normalization is handled by the main translation prompt.
+        canonical_title, canonical_article = title_fi, article_fi
 
         protected_title, title_names = _protect_local_names(canonical_title)
         protected_article, article_names = _protect_local_names(canonical_article)
@@ -563,6 +271,18 @@ Finnish headline:
 
 Finnish article:
 {protected_article}
+
+Additional rules:
+- Keep Finnish local streets, roads, parks, neighborhoods, districts, islands,
+  venues, stops and other local place names in Finnish.
+- Normalize inflected Finnish local place names to their nominative/base form.
+  Examples: Vikinsaareen -> Vikinsaari, Vikinsaaren -> Vikinsaari,
+  Vikinsaarella -> Vikinsaari, Hämeenkadulla -> Hämeenkatu,
+  Koskipuistossa -> Koskipuisto.
+- Do not translate or invent local names. Major city names such as Tampere,
+  Helsinki and Turku may be translated normally.
+- Russian words must never contain accidental Latin letters. Write "оазис",
+  not "оazис".
 """
 
         response = self._ollama_request(
@@ -609,13 +329,6 @@ Finnish article:
             raise RuntimeError("Ollama returned an empty title or summary.")
 
         title, summary = self._repair_finnish_administrative_terms(title, summary)
-        try:
-            title, summary = self._repair_mixed_scripts(title, summary)
-        except Exception as exc:
-            print(
-                f"WARNING: Mixed-script correction failed; "
-                f"using the current translation: {exc}"
-            )
 
         title = _restore_local_names(title, replacements)
         summary = _restore_local_names(summary, replacements)

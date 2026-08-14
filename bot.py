@@ -1,3 +1,5 @@
+import os
+MAX_ARTICLES_PER_RUN = int(os.getenv('MAX_ARTICLES_PER_RUN', '5'))
 import argparse
 import asyncio
 import html
@@ -54,7 +56,12 @@ def process_once(test=False):
 
     if not any_processed():
         print("No processed-article history found. Creating initial RSS baseline.")
+        processed_this_run = 0
         for article in articles:
+            if processed_this_run >= MAX_ARTICLES_PER_RUN:
+                print(f'Reached MAX_ARTICLES_PER_RUN={MAX_ARTICLES_PER_RUN}; remaining articles will be processed on the next run.')
+            processed_this_run += 1
+
             mark_processed(article.url, article.title, article.published)
         print(f"Baseline saved: {len(articles)} existing articles will not be posted.")
         return
