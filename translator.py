@@ -221,6 +221,19 @@ def _mixed_script_words(text):
     return [w for w in words if _CYRILLIC_RE.search(w) and _LATIN_RE.search(w)]
 
 
+def _summary_needs_expansion(summary: str, source_text: str) -> bool:
+    """Return True when a summary is unusually short for a substantial article."""
+    word_count = len(re.findall(r"\\b\\w+[\\w’'-]*\\b", summary or "", flags=re.UNICODE))
+    source_words = len(re.findall(r"\\b\\w+[\\w’'-]*\\b", source_text or "", flags=re.UNICODE))
+
+    # Short source articles do not need artificial expansion.
+    if source_words < 250:
+        return False
+
+    # For normal news articles, request expansion when the model produces a
+    # very short summary. Avoid imposing a hard minimum on every article.
+    return word_count < 70
+
 class OllamaEditor:
     def __init__(self):
         base_url = OLLAMA_URL.rstrip("/")
@@ -376,7 +389,7 @@ Return ONLY valid JSON in exactly this shape:
 TRANSLATION RULES:
 - Understand the Finnish text before writing; do not translate word-for-word.
 - Write a natural, concise journalistic headline in {language}.
-- Write a concise 2-4 sentence summary in {language}.
+- Write a 3-5 sentence summary, normally around 90-140 words. Include the key facts, people and organizations involved, important numbers, dates and the outcome. Do not omit important details merely to make the summary shorter. in {language}.
 - Do not invent, infer, embellish or omit important facts.
 - Preserve uncertainty and attribution; never turn allegations or speculation into facts.
 - Preserve numbers, dates, times, measurements and factual relationships accurately.

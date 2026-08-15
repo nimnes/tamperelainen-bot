@@ -144,3 +144,7 @@ python -m compileall .
 ## License
 
 See the repository for the applicable project license.
+
+## Summary quality
+
+Generated summaries target 3–5 sentences and roughly 90–140 words for substantial articles. Very short summaries are automatically sent through an additional expansion pass when appropriate.
