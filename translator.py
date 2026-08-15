@@ -180,6 +180,13 @@ def _protect_local_names(text, replacements=None):
 def _restore_local_names(text, replacements):
     for token, original in replacements.items():
         text = text.replace(token, original)
+
+    # Ollama can occasionally preserve the protection delimiters around an
+    # already-restored name, producing e.g. [[[Hatanpään kartano]]]. Those
+    # delimiters are internal implementation details and must never reach
+    # Telegram. Only remove the exact triple-bracket wrapper; ordinary square
+    # brackets in article text are left untouched.
+    text = re.sub(r"\[\[\[(.*?)\]\]\]", r"\1", text)
     return text
 
 
