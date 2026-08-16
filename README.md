@@ -148,3 +148,45 @@ See the repository for the applicable project license.
 ## Summary quality
 
 Generated summaries target 3–5 sentences and roughly 90–140 words for substantial articles. Very short summaries are automatically sent through an additional expansion pass when appropriate.
+
+### Translation quality
+
+Finnish local names are handled directly by the translation model. The prompt
+requires canonical Finnish place names, preserves Finnish diacritics, and asks
+the model to normalize Finnish grammatical case endings where appropriate.
+There is no separate local-name placeholder/protection layer.
+
+
+## Local testing without Telegram
+
+You can test the RSS extraction and Ollama translation locally without sending
+anything to Telegram or modifying the processed-article database:
+
+```bash
+python test_rss.py
+```
+
+By default this processes the 10 newest RSS articles. To choose another number:
+
+```bash
+python test_rss.py --count 5
+```
+
+To save the Finnish source text and Ollama results for inspection:
+
+```bash
+python test_rss.py --count 10 --output test_results.json
+```
+
+This test script uses the same RSS, article extraction and translation pipeline
+as the bot, but it does not initialize or update `articles.db` and never imports
+the Telegram sender.
+
+
+### City-name translation
+
+
+Major Finnish cities with established Russian names are explicitly listed in the
+translation prompt so their Russian forms remain consistent. Other local names
+are handled by Ollama in canonical Finnish form unless a standard Russian name
+exists.

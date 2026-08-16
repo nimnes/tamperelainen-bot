@@ -44,7 +44,6 @@ OTHER = none of the above"""
 
 # These are the only Finnish city names that the model is explicitly allowed
 # to render using an established Russian/English form. Local names are handled
-# separately and are protected by _protect_local_names().
 MAJOR_CITY_TRANSLATIONS = {
     "en": {
         "Tampere": "Tampere", "Helsinki": "Helsinki", "Turku": "Turku",
@@ -61,15 +60,6 @@ MAJOR_CITY_TRANSLATIONS = {
 # Known Tampere-area names. This is intentionally small; the suffix patterns
 # below cover many additional Finnish street/locality names without requiring
 # an ever-growing dictionary.
-KNOWN_LOCAL_NAMES = [
-    "Tullin", "Koskipuisto", "Hervannan Duo", "Hämeenkatu", "Aleksanterinkatu",
-    "Pyynikintie", "Tesoman valtatie", "Sammonkatu", "Itsenäisyydenkatu",
-    "Kalevantie", "Teiskontie", "Rantaväylä", "Näsijärvi", "Pyynikki",
-    "Hervanta", "Tesoma", "Kaleva", "Tammela", "Amuri", "Pispala", "Kaukajärvi",
-    "Lielahti", "Nekala", "Hatanpää", "Viinikka", "Rahola", "Linnainmaa",
-    "Hervannan valtaväylä", "Tampereen Ratikka",
-]
-
 # Finnish local names frequently contain these suffixes. If a word looks like
 # such a name, protect it from translation. The rule is conservative and only
 # applies to words beginning with a capital letter or known multiword names.
@@ -103,100 +93,9 @@ def _parse_json_response(content: str) -> dict:
 
     return result
 
-def _protect_local_names(text, replacements=None):
-    """Replace local Finnish names with opaque placeholders before Ollama.
-
-    This is deliberately done before the model sees the text. Prompt-only
-    instructions are not sufficient for names such as Koskipuisto, which can
-    look like an ordinary Finnish compound word to a language model.
-    """
-    if replacements is None:
-        replacements = {}
-    protected = text
-
-    candidates = sorted(KNOWN_LOCAL_NAMES, key=len, reverse=True)
-
-    # Finnish street and other cadastral names are commonly inflected.
-    # For example, "X-katu" -> "X-kadulla", "X-kadulle", "X-kadulta".
-    # The official Finnish language guidance identifies katu, tie, kuja, polku,
-    # kaari, linja, raitti, rinne, ranta and väylä among common name elements.
-    # Protect these forms before the LLM sees them.
-    inflected_local_pattern = re.compile(
-        r"\b(?:"
-        r"[A-ZÅÄÖ][\wÅÄÖåäö-]*(?:\s+[A-ZÅÄÖ][\wÅÄÖåäö-]*){0,5}"
-        r"|[A-ZÅÄÖ][\wÅÄÖåäö-]*"
-        r")"
-        r"(?:"
-        r"kadulla|kadulle|kadulta|kadun|kadussa|kadusta|katuun|kadut|"
-        r"teillä|teille|teiltä|tien|tiellä|tiellä|tiehen|tiestä|"
-        r"kujalla|kujalle|kujalta|kujan|kujassa|kujasta|kujaan|"
-        r"polulla|polulle|polulta|polun|polussa|polusta|polkuun|"
-        r"kaarella|kaarelle|kaarelta|kaaren|kaaressa|kaaresta|kaareen|"
-        r"linjalla|linjalle|linjalta|linjan|linjassa|linjasta|linjaan|"
-        r"raitilla|raitille|raitilta|raitin|raitissa|raitista|raittiin|"
-        r"rinteellä|rinteelle|rinteeltä|rinteen|rinteessä|rinteestä|rinteeseen|"
-        r"rannalla|rannalle|rannalta|rannan|rannassa|rannasta|rantaan|"
-        r"väylällä|väylälle|väylältä|väylän|väylässä|väylästä|väylään"
-        r")\b",
-        re.UNICODE,
-    )
-
-    # Capture the whole name ending in the inflected place-name element.
-    # This supplements, rather than replaces, the known-name list.
-    for match in inflected_local_pattern.finditer(text):
-        value = match.group(0)
-        if value not in replacements and len(value) > 4:
-            placeholder = f"[[[LOCAL_NAME_{len(replacements)}]]]"
-            replacements[placeholder] = value
-            protected = protected.replace(value, placeholder)
-    if candidates:
-        pattern = re.compile(
-            r"(?<![\wÅÄÖåäö])(?:" + "|".join(re.escape(x) for x in candidates) + r")(?![\wÅÄÖåäö])",
-            re.IGNORECASE,
-        )
-
-        def replace_known(match):
-            token = f"[[[LOCAL_NAME_{len(replacements)}]]]"
-            replacements[token] = match.group(0)
-            return token
-
-        protected = pattern.sub(replace_known, protected)
-
-    # Protect likely Finnish street/locality names not already covered by the
-    # dictionary. Do this after known names so placeholders are not re-matched.
-    suffix_pattern = re.compile(
-        r"\b([A-ZÅÄÖ][\wÅÄÖåäö-]{2,}(?:" + "|".join(re.escape(s) for s in LOCAL_NAME_SUFFIXES) + r"))\b"
-    )
-
-    def replace_suffix(match):
-        token = f"[[[LOCAL_NAME_{len(replacements)}]]]"
-        replacements[token] = match.group(1)
-        return token
-
-    protected = suffix_pattern.sub(replace_suffix, protected)
-    return protected, replacements
-
-
-def _restore_local_names(text, replacements):
-    for token, original in replacements.items():
-        text = text.replace(token, original)
-
-    # Ollama can occasionally preserve the protection delimiters around an
-    # already-restored name, producing e.g. [[[Hatanpään kartano]]]. Those
-    # delimiters are internal implementation details and must never reach
-    # Telegram. Only remove the exact triple-bracket wrapper; ordinary square
-    # brackets in article text are left untouched.
-    text = re.sub(r"\[\[\[(.*?)\]\]\]", r"\1", text)
-    return text
-
-
-
-_CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
-_LATIN_RE = re.compile(r"[A-Za-z]")
-
 # Finnish administrative terms that should normally be translated rather than
-# preserved as local proper names. The unique proper names surrounding them
-# remain protected separately.
+# preserved as local proper names. Local proper names surrounding them are handled
+# by the model-native local-name rules.
 _FINNISH_ADMIN_TERMS = (
     "lautakunta", "lautakunnan", "jaosto", "jaostolle", "jaostossa",
     "yhdyskuntalautakunta", "yhdyskuntalautakunnan",
@@ -205,7 +104,7 @@ _FINNISH_ADMIN_TERMS = (
     "ympäristöterveydenhuolto", "ympäristöterveydenhuollon",
     "kaupunkikehitys", "kaupunkikehityksen",
     "virasto", "viraston", "osasto", "osaston",
-    "toimiala", "toimialan", "hallinto", "hallinnon",
+    "lautakuntaan", "jaostoon", "lautakunnalle", "jaoston",
 )
 
 def _finnish_admin_terms(text):
@@ -215,24 +114,6 @@ def _finnish_admin_terms(text):
         if re.search(r"(?<![A-Za-zÅÄÖåäö])" + re.escape(term) +
                      r"(?![A-Za-zÅÄÖåäö])", lowered)
     })
-
-def _mixed_script_words(text):
-    words = re.findall(r"[A-Za-zА-Яа-яЁёÀ-ÖØ-öø-ÿĀ-ž'-]+", text)
-    return [w for w in words if _CYRILLIC_RE.search(w) and _LATIN_RE.search(w)]
-
-
-def _summary_needs_expansion(summary: str, source_text: str) -> bool:
-    """Return True when a summary is unusually short for a substantial article."""
-    word_count = len(re.findall(r"\\b\\w+[\\w’'-]*\\b", summary or "", flags=re.UNICODE))
-    source_words = len(re.findall(r"\\b\\w+[\\w’'-]*\\b", source_text or "", flags=re.UNICODE))
-
-    # Short source articles do not need artificial expansion.
-    if source_words < 250:
-        return False
-
-    # For normal news articles, request expansion when the model produces a
-    # very short summary. Avoid imposing a hard minimum on every article.
-    return word_count < 70
 
 class OllamaEditor:
     def __init__(self):
@@ -300,8 +181,6 @@ STRICT RULES:
   (city council), kaupunginhallitus (city government/municipal executive board),
   virasto (agency), osasto (department) and similar administrative terminology.
 - Preserve actual names of people, companies, associations, venues and places.
-- Preserve protected tokens such as [[[LOCAL_NAME_0]]] exactly. Never translate,
-  remove or alter them.
 - Translate Finnish grammatical case endings as part of the phrase; do not leave
   Finnish inflections attached to an otherwise translated administrative term.
 - Keep Tampere as Tampere in English and as Тампере in Russian.
@@ -325,7 +204,7 @@ Summary:
                         "role": "system",
                         "content": (
                             f"You are a precise Finnish-to-{language} translation "
-                            "corrector. Preserve names and protected tokens. Return JSON only."
+                            "corrector. Preserve local proper names and return JSON only."
                         ),
                     },
                     {"role": "user", "content": prompt},
@@ -362,22 +241,7 @@ Summary:
     def process(self, title_fi, article_fi):
         language = "Russian" if OUTPUT_LANGUAGE == "ru" else "English"
 
-        # Normalize inflected Finnish local names to their nominative form
-        # before translation (e.g. Vikinsaareen -> Vikinsaari).
-        # Local-name normalization is handled by the main translation prompt.
-        canonical_title, canonical_article = title_fi, article_fi
-
-        # Share one replacement dictionary so title and article placeholders
-        # always have unique IDs. Otherwise both calls start at LOCAL_NAME_0
-        # and the second dictionary overwrites the first replacement.
-        replacements = {}
-        protected_title, replacements = _protect_local_names(
-            canonical_title, replacements
-        )
-        protected_article, replacements = _protect_local_names(
-            canonical_article, replacements
-        )
-
+        # Local-name handling is model-native; no placeholders are generated.
         prompt = f"""You are a professional Finnish-to-{language} local-news translator and editor.
 
 The source article is Finnish. Create a natural {language} version for readers
@@ -394,44 +258,48 @@ TRANSLATION RULES:
 - Preserve uncertainty and attribution; never turn allegations or speculation into facts.
 - Preserve numbers, dates, times, measurements and factual relationships accurately.
 
-PROPER-NAME RULES — STRICT:
-- Finnish local proper names are protected in the source using tokens like
-  [[[LOCAL_NAME_0]]]. NEVER translate, transliterate, modify or omit these tokens.
-  Copy every protected token exactly into the corresponding place in your output.
-- After the output is generated, protected tokens will be replaced with their
-  original Finnish names. Therefore, do not try to make them readable yourself.
-- NEVER translate or alter people's names. Keep original spelling and diacritics.
-- NEVER translate Finnish street, road, square, park, neighborhood, district,
-  stop, station, building, venue or local geographic names.
-- NEVER translate a Finnish local compound name merely because it looks like an
-  ordinary Finnish word. For example, Koskipuisto is a proper place name, not
-  something to translate as "Rapids Park".
-- Keep the names of local businesses, associations, companies, organizations
-  and venues in their original form unless there is a clearly established
-  official {language} name.
-- Do NOT keep Finnish municipal/governmental administrative body names merely
-  because they are long or look like proper names. Translate their descriptive
-  function into natural {language}. This includes committees, boards,
-  departments, divisions and subcommittees (for example Finnish terms such as
-  lautakunta, jaosto, yhdyskuntalautakunta and ympäristöterveydenhuolto).
-- Keep the unique place name within such a body name when appropriate (for
-  example Tampere), but translate the administrative function around it.
-- Only major Finnish cities may use an established {language} form. Do not
-  translate smaller localities unless the form is genuinely standard.
-- If unsure whether a name has an established {language} form, keep Finnish.
-- Keep the canonical Finnish form of protected local names exactly as supplied.
-- Finnish case endings on local names have already been normalized to the
-  nominative/base form before translation. Do not restore Finnish case endings.
+        PROPER-NAME RULES — STRICT:
+        - Preserve the canonical Finnish form of local geographical and place names.
+        - This includes municipalities, cities, districts, neighborhoods, streets, roads,
+          squares, parks, lakes, rivers, islands, landmarks, buildings and other locally
+          identifiable places.
+        - Do not translate, transliterate, or invent a Russian equivalent for a Finnish
+          local name unless it has a standard, well-established Russian form.
+        - Remove Finnish grammatical case endings when needed and use the canonical name
+          in the target-language sentence. Examples: Tampereella -> Tampere,
+          Lempäälässä -> Lempäälä, Pirkanmaalla -> Pirkanmaa.
+        - Keep Finnish diacritics and spelling exactly in the canonical name:
+          Lempäälä, Pyhäjärvi, Hatanpään kartano.
+        - Do not put square brackets, placeholder markers, quotation marks, or other
+          markup around local names.
+        - Never output placeholder tokens or placeholder markup.
+        - Major Finnish cities with established Russian names MUST always use their
+          standard Russian names in Russian output, including when the Finnish source
+          uses a grammatical case. The required forms are:
+          Tampere -> Тампере; Helsinki -> Хельсинки; Espoo -> Эспоо;
+          Vantaa -> Вантаа; Turku -> Турку; Oulu -> Оулу; Lahti -> Лахти;
+          Jyväskylä -> Ювяскюля; Kuopio -> Куопио; Pori -> Пори;
+          Vaasa -> Вааса; Rovaniemi -> Рованиеми; Joensuu -> Йоэнсуу;
+          Lappeenranta -> Лаппеэнранта; Hämeenlinna -> Хямеэнлинна;
+          Seinäjoki -> Сейняйоки; Mikkeli -> Миккели; Kotka -> Котка;
+          Porvoo -> Порвоо.
+        - Apply the same Russian city name when the Finnish source contains a case
+          form, e.g. Tampereella -> Тампере, Tampereen -> Тампере;
+          Helsingissä -> Хельсинки, Helsingin -> Хельсинки.
+        - Do NOT use the Finnish spelling for these cities in Russian output when
+          referring to the city itself. Other Finnish local names should remain in
+          canonical Finnish form unless they have a standard Russian name.
 
-Examples for Russian:
-Tampere -> Тампере
-Helsinki -> Хельсинки
-Tullin -> Tullin
-Koskipuisto -> Koskipuisto
-Hervannan Duo -> Hervannan Duo
-Hämeenkatu -> Hämeenkatu
-Pyynikintie -> Pyynikintie
-Näsijärvi -> Näsijärvi
+
+        Examples for Russian:
+        Tampere -> Тампере
+        Helsinki -> Хельсинки
+        Tullin -> Tullin
+        Koskipuisto -> Koskipuisto
+        Hervannan Duo -> Hervannan Duo
+        Hämeenkatu -> Hämeenkatu
+        Pyynikintie -> Pyynikintie
+        Näsijärvi -> Näsijärvi
 
 CATEGORY RULES:
 - First identify the MAIN SUBJECT of the article.
@@ -447,10 +315,10 @@ CATEGORY RULES:
 {CATEGORY_DEFINITIONS}
 
 Finnish headline:
-{protected_title}
+{title_fi}
 
 Finnish article:
-{protected_article}
+{article_fi}
 
 Additional rules:
 - Keep Finnish local streets, roads, parks, neighborhoods, districts, islands,
@@ -459,8 +327,9 @@ Additional rules:
   Examples: Vikinsaareen -> Vikinsaari, Vikinsaaren -> Vikinsaari,
   Vikinsaarella -> Vikinsaari, Hämeenkadulla -> Hämeenkatu,
   Koskipuistossa -> Koskipuisto.
-- Do not translate or invent local names. Major city names such as Tampere,
-  Helsinki and Turku may be translated normally.
+    - Do not translate or invent other Finnish local names. Major Finnish cities
+      with established Russian names must use their standard Russian names, as
+      specified above.
 - Russian words must never contain accidental Latin letters. Write "оазис",
   not "оazис".
 """
@@ -473,7 +342,7 @@ Additional rules:
                         "role": "system",
                         "content": (
                             f"You are a precise Finnish-to-{language} news translator "
-                            "and editor. Protected local-name tokens are immutable. "
+                            "and editor. Finnish local names must be preserved in canonical form. "
                             "Return valid JSON only."
                         ),
                     },
@@ -510,9 +379,6 @@ Additional rules:
             raise RuntimeError("Ollama returned an empty title or summary.")
 
         title, summary = self._repair_finnish_administrative_terms(title, summary)
-
-        title = _restore_local_names(title, replacements)
-        summary = _restore_local_names(summary, replacements)
 
         return {
             "title": title,
