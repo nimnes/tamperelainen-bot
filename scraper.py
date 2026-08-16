@@ -25,6 +25,89 @@ def normalize(value):
     value = re.sub(r"\n{3,}", "\n\n", value)
     return value.strip()
 
+def _srcset_candidates(srcset, base_url):
+    """Return (width, url) candidates from a srcset-like attribute."""
+    from urllib.parse import urljoin
+
+    candidates = []
+    for item in (srcset or "").split(","):
+        parts = item.strip().split()
+        if not parts:
+            continue
+
+        raw_url = parts[0]
+        descriptor = parts[1] if len(parts) > 1 else ""
+
+        try:
+            if descriptor.endswith("w"):
+                width = int(descriptor[:-1])
+            elif descriptor.endswith("x"):
+                width = int(float(descriptor[:-1]) * 1000)
+            else:
+                width = 0
+        except ValueError:
+            width = 0
+
+        candidates.append((width, urljoin(base_url, raw_url)))
+
+    return candidates
+
+
+def _diks_figure_image_url(soup, base_url):
+    """Return the highest-resolution image from the article's main figure."""
+    from urllib.parse import urljoin
+
+    figure = soup.select_one(".diks-figure__image")
+    if not figure:
+        return ""
+
+    candidates = []
+
+    # The element may itself be an img, or may contain the img/picture.
+    elements = [figure] + figure.find_all(["img", "source"])
+
+    for element in elements:
+        for attr in ("srcset", "data-srcset"):
+            candidates.extend(
+                _srcset_candidates(element.get(attr), base_url)
+            )
+
+        # Prefer explicit original-image attributes over ordinary src.
+        for attr in ("data-original", "data-src", "src"):
+            value = element.get(attr)
+            if value:
+                candidates.append((0, urljoin(base_url, value)))
+
+    if not candidates:
+        return ""
+
+    # Use the largest declared source. If there is no width information,
+    # preserve DOM order.
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[0][1]
+
+
+def find_original_image_url(soup, base_url):
+    """Select the article's main original image without cropping/resizing."""
+    image_url = _diks_figure_image_url(soup, base_url)
+    if image_url:
+        return image_url
+
+    # Metadata is only a fallback for pages where the main figure is absent.
+    from urllib.parse import urljoin
+
+    for attrs in (
+        {"property": "og:image"},
+        {"name": "twitter:image"},
+        {"property": "twitter:image"},
+    ):
+        image_meta = soup.find("meta", attrs=attrs)
+        if image_meta and image_meta.get("content"):
+            return urljoin(base_url, image_meta["content"].strip())
+
+    return ""
+
+
 def fetch_article(url, fallback_description=""):
     response = requests.get(url, headers=HEADERS, timeout=30)
     response.raise_for_status()
@@ -47,14 +130,7 @@ def fetch_article(url, fallback_description=""):
     if not title and soup.title:
         title = soup.title.get_text(" ", strip=True)
 
-    image_url = ""
-    image_meta = (
-        soup.find("meta", attrs={"property": "og:image"})
-        or soup.find("meta", attrs={"name": "twitter:image"})
-        or soup.find("meta", attrs={"property": "twitter:image"})
-    )
-    if image_meta and image_meta.get("content"):
-        image_url = image_meta["content"].strip()
+    image_url = find_original_image_url(soup, url)
 
     description = ""
     meta = soup.find("meta", attrs={"property": "og:description"})
