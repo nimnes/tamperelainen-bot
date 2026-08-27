@@ -3,9 +3,10 @@ name: Tamperelainen news
 on:
   workflow_dispatch:
   schedule:
-    # Every 30 minutes from 07:00 through 21:30 Helsinki time.
+    # Every 30 minutes from 07:15 through 21:45 Helsinki time.
     # The IANA timezone keeps the schedule correct across EET/EEST.
-    - cron: "*/30 7-21 * * *"
+    - cron: "15,45 7-21 * * *"
+      timezone: "Europe/Helsinki"
       timezone: "Europe/Helsinki"
 
 permissions:
