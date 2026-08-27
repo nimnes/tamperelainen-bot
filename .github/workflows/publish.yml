@@ -7,7 +7,6 @@ on:
     # The IANA timezone keeps the schedule correct across EET/EEST.
     - cron: "15,45 7-21 * * *"
       timezone: "Europe/Helsinki"
-      timezone: "Europe/Helsinki"
 
 permissions:
   contents: write
