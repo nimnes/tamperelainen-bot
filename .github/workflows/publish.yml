@@ -55,11 +55,18 @@ jobs:
           # migration seed. This preserves the existing history on the first run.
           if gh release view "$DB_RELEASE_TAG" >/dev/null 2>&1; then
             echo "Restoring articles.db from GitHub Release $DB_RELEASE_TAG"
-            rm -f data/articles.db
-            gh release download "$DB_RELEASE_TAG" \
+            restore_dir=$(mktemp -d)
+            if gh release download "$DB_RELEASE_TAG" \
               --pattern articles.db \
-              --dir data \
-              --clobber
+              --dir "$restore_dir"; then
+              mv "$restore_dir/articles.db" data/articles.db
+              echo "Restored articles.db from the release."
+            elif [ -f data/articles.db ]; then
+              echo "WARNING: The release database asset could not be downloaded; keeping the checked-out database as a recovery seed."
+            else
+              echo "WARNING: The release database asset could not be downloaded; the bot will create a new database."
+            fi
+            rm -rf "$restore_dir"
           elif [ -f data/articles.db ]; then
             echo "No database release exists yet; using the repository database as migration seed."
           else
@@ -115,5 +122,18 @@ jobs:
               --notes "Persistent SQLite state for the Tamperelainen Telegram bot. This release asset is managed automatically by GitHub Actions."
           fi
 
-          gh release upload "$DB_RELEASE_TAG" data/articles.db --clobber
+          # GitHub can briefly return 404 for the old asset while --clobber is
+          # replacing it. Retry with a fresh asset lookup before failing.
+          for attempt in 1 2 3; do
+            if gh release upload "$DB_RELEASE_TAG" data/articles.db --clobber; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "ERROR: Could not upload articles.db after $attempt attempts."
+              exit 1
+            fi
+            delay=$((attempt * 5))
+            echo "Upload attempt $attempt failed; retrying in ${delay}s."
+            sleep "$delay"
+          done
           echo "articles.db persisted to GitHub Release $DB_RELEASE_TAG."
