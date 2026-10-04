@@ -295,6 +295,7 @@ TRANSLATION RULES:
         Tampere -> Тампере
         Helsinki -> Хельсинки
         Tullin -> Tullin
+        Hervannan (when referring to the district) -> Hervanta
         Koskipuisto -> Koskipuisto
         Hervannan Duo -> Hervannan Duo
         Hämeenkatu -> Hämeenkatu
@@ -326,7 +327,8 @@ Additional rules:
 - Normalize inflected Finnish local place names to their nominative/base form.
   Examples: Vikinsaareen -> Vikinsaari, Vikinsaaren -> Vikinsaari,
   Vikinsaarella -> Vikinsaari, Hämeenkadulla -> Hämeenkatu,
-  Koskipuistossa -> Koskipuisto.
+  Koskipuistossa -> Koskipuisto, Hervannan -> Hervanta (when referring to the
+  district; preserve the full proper name Hervannan Duo unchanged).
     - Do not translate or invent other Finnish local names. Major Finnish cities
       with established Russian names must use their standard Russian names, as
       specified above.
