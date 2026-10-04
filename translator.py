@@ -283,6 +283,9 @@ TRANSLATION RULES:
           Lappeenranta -> Лаппеэнранта; Hämeenlinna -> Хямеэнлинна;
           Seinäjoki -> Сейняйоки; Mikkeli -> Миккели; Kotka -> Котка;
           Porvoo -> Порвоо.
+        - Use the established Russian form for the region Pirkanmaa as well:
+          Pirkanmaa -> Пирканмаа, including inflected forms such as
+          Pirkanmaalla and Pirkanmaan.
         - Apply the same Russian city name when the Finnish source contains a case
           form, e.g. Tampereella -> Тампере, Tampereen -> Тампере;
           Helsingissä -> Хельсинки, Helsingin -> Хельсинки.
