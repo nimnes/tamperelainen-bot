@@ -296,6 +296,15 @@ TRANSLATION RULES:
           place names. Never translate hyvinvointialue literally as область
           благополучия or Пирканмаа область благополучия. Do not confuse the
           organization with the geographical region Пирканмаа.
+        - In Russian output, translate the organization name Digi- ja
+          väestötietovirasto as Агентство цифровой информации и учёта населения
+          Финляндии (DVV) on first mention; use DVV on subsequent mentions.
+          Apply this rule also to Finnish case forms such as Digi- ja
+          väestötietoviraston, Digi- ja väestötietovirastossa, DVV:n and DVV:lle,
+          and to DVV when it clearly refers to this organization. Inflect the
+          Russian phrase naturally as needed. This organization-name rule takes
+          precedence over preserving Finnish proper names. Do not confuse DVV
+          with Migri or infer responsibilities not stated in the source.
         - Apply the same Russian city name when the Finnish source contains a case
           form, e.g. Tampereella -> Тампере, Tampereen -> Тампере;
           Helsingissä -> Хельсинки, Helsingin -> Хельсинки.
@@ -401,3 +410,4 @@ Additional rules:
             "category": category,
             "category_label": CATEGORY_LABELS[OUTPUT_LANGUAGE][category],
         }
+
