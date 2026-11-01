@@ -2,8 +2,12 @@ import html as html_lib
 import json
 import re
 import requests
+import time
 
-from config import OLLAMA_API_KEY, OLLAMA_URL, OLLAMA_MODEL, OUTPUT_LANGUAGE
+from model_provider import build_request, normalize_response
+
+from config import (LLM_PROVIDER, GOOGLE_API_KEY, GOOGLE_URL, GOOGLE_MODEL,
+                    OLLAMA_API_KEY, OLLAMA_URL, OLLAMA_MODEL, OUTPUT_LANGUAGE)
 
 CATEGORY_LABELS = {
     "en": {
@@ -72,7 +76,7 @@ LOCAL_NAME_SUFFIXES = (
 
 
 def _parse_json_response(content: str) -> dict:
-    """Parse an Ollama JSON response, tolerating Markdown code fences."""
+    """Parse a model JSON response, tolerating Markdown code fences."""
     cleaned = content.strip()
 
     if cleaned.startswith("```"):
@@ -89,7 +93,7 @@ def _parse_json_response(content: str) -> dict:
         result = json.loads(cleaned[start:end + 1])
 
     if not isinstance(result, dict):
-        raise RuntimeError("Ollama returned JSON, but it is not an object.")
+        raise RuntimeError("Model returned JSON, but it is not an object.")
 
     return result
 
@@ -115,40 +119,36 @@ def _finnish_admin_terms(text):
                      r"(?![A-Za-zÅÄÖåäö])", lowered)
     })
 
-class OllamaEditor:
+class NewsEditor:
     def __init__(self):
-        base_url = OLLAMA_URL.rstrip("/")
-        self.url = base_url if base_url.endswith("/chat") else base_url + "/chat"
-        self.model = OLLAMA_MODEL
+        self.provider = LLM_PROVIDER
+        self.url = GOOGLE_URL if self.provider == "google" else OLLAMA_URL
+        self.model = GOOGLE_MODEL if self.provider == "google" else OLLAMA_MODEL
+        self.key = GOOGLE_API_KEY if self.provider == "google" else OLLAMA_API_KEY
+        if self.provider == "google" and not self.key:
+            raise ValueError("Set GOOGLE_API_KEY before using Google")
 
-
-    def _ollama_request(self, payload, timeout=180, retries=1, operation="Ollama"):
-        """Call Ollama Cloud with a single retry for transient failures."""
-        last_error = None
+    def _model_request(self, payload, timeout=180, retries=1, operation="Model"):
+        url, headers, body = build_request(self.provider, self.url, self.key, payload)
         for attempt in range(retries + 1):
             try:
-                response = requests.post(
-                    self.url,
-                    headers={
-                        "Authorization": f"Bearer {OLLAMA_API_KEY}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                    stream=False,
-                    timeout=timeout,
-                )
-                response.raise_for_status()
-                return response
-            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
-                last_error = exc
+                response = requests.post(url, headers=headers, json=body,
+                                         stream=False, timeout=timeout, allow_redirects=False)
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
                 if attempt < retries:
-                    print(f"WARNING: {operation} failed ({exc}); retrying once...")
                     continue
-                raise RuntimeError(
-                    f"{operation} failed after {retries + 1} attempts: {exc}"
-                ) from exc
-            except requests.exceptions.RequestException as exc:
-                raise RuntimeError(f"{operation} failed: {exc}") from exc
+                raise RuntimeError(f"{operation}: {self.provider} network request failed") from None
+            except requests.exceptions.RequestException:
+                raise RuntimeError(f"{operation}: {self.provider} request failed") from None
+            if response.status_code in {429, 500, 502, 503, 504} and attempt < retries:
+                time.sleep(2)
+                continue
+            if not 200 <= response.status_code < 300:
+                raise RuntimeError(f"{operation}: {self.provider} HTTP {response.status_code}")
+            try:
+                return normalize_response(self.provider, response.json())
+            except (ValueError, TypeError, AttributeError):
+                raise RuntimeError(f"{operation}: {self.provider} invalid response") from None
 
 
     def _repair_finnish_administrative_terms(self, title, summary):
@@ -156,7 +156,7 @@ class OllamaEditor:
 
         The main translation intentionally protects local proper names. That can
         sometimes cause long Finnish municipal body names to survive translation.
-        This pass asks Ollama to translate only administrative terminology while
+        This pass asks the model to translate only administrative terminology while
         preserving actual names and protected local-name placeholders.
         """
         if OUTPUT_LANGUAGE not in ("ru", "en"):
@@ -196,7 +196,7 @@ Summary:
 {summary}
 """
 
-        response = self._ollama_request(
+        response = self._model_request(
             {
                 "model": self.model,
                 "messages": [
@@ -219,22 +219,22 @@ Summary:
             operation="Administrative-term correction",
         )
 
-        content = (response.json().get("message") or {}).get("content", "").strip()
+        content = (response.get("message") or {}).get("content", "").strip()
         if not content:
-            raise RuntimeError("Ollama returned an empty administrative-term correction.")
+            raise RuntimeError("Model returned an empty administrative-term correction.")
 
         try:
             result = _parse_json_response(content)
         except json.JSONDecodeError as exc:
             raise RuntimeError(
-                f"Ollama returned invalid administrative-term JSON: {content}"
+                f"Model returned invalid administrative-term JSON: {content}"
             ) from exc
 
         corrected_title = html_lib.unescape(str(result.get("title", title)).strip())
         corrected_summary = html_lib.unescape(str(result.get("summary", summary)).strip())
 
         if not corrected_title or not corrected_summary:
-            raise RuntimeError("Ollama returned an empty administrative-term correction.")
+            raise RuntimeError("Model returned an empty administrative-term correction.")
 
         return corrected_title, corrected_summary
 
@@ -358,7 +358,7 @@ Additional rules:
   not "оazис".
 """
 
-        response = self._ollama_request(
+        response = self._model_request(
             {
                 "model": self.model,
                 "messages": [
@@ -381,17 +381,15 @@ Additional rules:
             retries=1,
             operation="Translation",
         )
-        if response.status_code >= 400:
-            raise RuntimeError(f"Ollama API {response.status_code}: {response.text[:500]}")
 
-        content = (response.json().get("message") or {}).get("content", "").strip()
+        content = (response.get("message") or {}).get("content", "").strip()
         if not content:
-            raise RuntimeError("Ollama returned an empty editor response.")
+            raise RuntimeError("Model returned an empty editor response.")
 
         try:
             result = _parse_json_response(content)
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Ollama returned invalid JSON: {content}") from exc
+            raise RuntimeError(f"Model returned invalid JSON: {content}") from exc
 
         category = str(result.get("category", "OTHER")).upper().strip()
         if category not in CATEGORY_LABELS[OUTPUT_LANGUAGE]:
@@ -400,7 +398,7 @@ Additional rules:
         title = html_lib.unescape(str(result.get("title", "")).strip())
         summary = html_lib.unescape(str(result.get("summary", "")).strip())
         if not title or not summary:
-            raise RuntimeError("Ollama returned an empty title or summary.")
+            raise RuntimeError("Model returned an empty title or summary.")
 
         title, summary = self._repair_finnish_administrative_terms(title, summary)
 
@@ -411,3 +409,6 @@ Additional rules:
             "category_label": CATEGORY_LABELS[OUTPUT_LANGUAGE][category],
         }
 
+
+# Backward compatibility for existing integrations.
+OllamaEditor = NewsEditor

@@ -9,7 +9,7 @@ from config import MAX_ARTICLE_CHARS, OUTPUT_LANGUAGE
 from database import init_db, is_processed, mark_processed, any_processed
 from rss import fetch_articles
 from scraper import fetch_article
-from translator import OllamaEditor
+from translator import NewsEditor
 from telegram_sender import send_message
 
 
@@ -66,7 +66,7 @@ def process_once(test=False):
         print(f"Baseline saved: {len(articles)} existing articles will not be posted.")
         return 0
 
-    editor = OllamaEditor()
+    editor = NewsEditor()
     new_count = 0
 
     for article in reversed(articles):

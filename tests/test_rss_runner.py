@@ -20,7 +20,7 @@ def test_local_runner_does_not_use_telegram_or_database():
 def test_local_runner_uses_real_pipeline_components():
     assert "from rss import fetch_articles" in TEXT
     assert "from scraper import fetch_article" in TEXT
-    assert "from translator import OllamaEditor" in TEXT
+    assert "from translator import NewsEditor" in TEXT
     assert "editor.process(title_fi, body_fi)" in TEXT
 
 

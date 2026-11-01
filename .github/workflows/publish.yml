@@ -7,11 +7,9 @@ on:
             description: "What triggered this workflow"
             required: false
             default: "manual"
-  # schedule:
-  #   # Every 30 minutes from 07:15 through 21:45 Helsinki time.
-  #   # The IANA timezone keeps the schedule correct across EET/EEST.
-  #   - cron: "15,45 7-21 * * *"
-  #     timezone: "Europe/Helsinki"
+  # Cloudflare owns scheduling (Europe/Helsinki, including daylight saving):
+  # Mon–Fri 07:30–21:30 hourly; Sat–Sun 09:00–22:00 hourly, inclusive.
+  # Keep GitHub's schedule disabled to avoid duplicate executions.
 
 permissions:
   contents: write
@@ -94,8 +92,11 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'google' }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_MODEL: ${{ vars.GOOGLE_MODEL || 'gemma-4-31b-it' }}
           OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
-          OLLAMA_MODEL: gemma4:31b-cloud
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'gemma4:31b-cloud' }}
           # This repository publishes Russian. The application default is English.
           OUTPUT_LANGUAGE: ru
         run: python bot.py --once

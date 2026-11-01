@@ -15,14 +15,14 @@ import translator
 ])
 def test_russian_translation_receives_dvv_rules(monkeypatch, source_name):
     monkeypatch.setattr(translator, "OUTPUT_LANGUAGE", "ru")
-    editor = translator.OllamaEditor()
-    response = Mock(status_code=200)
-    response.json.return_value = {"message": {"content":
+    monkeypatch.setattr(translator, "GOOGLE_API_KEY", "test-key")
+    editor = translator.NewsEditor()
+    response = {"message": {"content":
         '{"title":"Новости DVV","summary":"Агентство цифровой информации и учёта '
         'населения Финляндии (DVV) сообщило об изменениях.","category":"LOCAL"}'
     }}
     request = Mock(return_value=response)
-    monkeypatch.setattr(editor, "_ollama_request", request)
+    monkeypatch.setattr(editor, "_model_request", request)
 
     result = editor.process(source_name, f"{source_name} tiedottaa muutoksista.")
 

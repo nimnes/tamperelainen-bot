@@ -6,6 +6,12 @@ load_dotenv()
 RSS_URL = "https://www.tamperelainen.fi/feed/rss/"
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "google").lower().strip()
+if LLM_PROVIDER not in {"google", "ollama"}:
+    raise ValueError("LLM_PROVIDER must be google or ollama")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+GOOGLE_MODEL = os.getenv("GOOGLE_MODEL", "gemma-4-31b-it")
+GOOGLE_URL = os.getenv("GOOGLE_URL", "https://generativelanguage.googleapis.com/v1beta")
 OLLAMA_API_KEY = os.getenv("OLLAMA_API_KEY", "")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "https://ollama.com/api")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:31b-cloud")

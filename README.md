@@ -1,6 +1,6 @@
 # Tamperelainen Telegram Bot
 
-A Telegram bot that monitors **Tamperelainen** news, translates and summarizes new articles with **Ollama Cloud**, and publishes the results to a Telegram channel.
+A Telegram bot that monitors **Tamperelainen** news, translates and summarizes new articles with **Google Gemma through the Gemini API** (or Ollama by configuration), and publishes the results to a Telegram channel.
 
 ## Main features
 
@@ -26,7 +26,7 @@ RSS / article extraction
 Local-name protection
         │
         ▼
-Ollama Cloud
+Google / Ollama
 (translation + summary + category)
         │
         ▼
@@ -42,8 +42,7 @@ Processed article URLs are stored in a runtime SQLite database at `data/articles
 
 - Python 3.11+ (use the version configured by the GitHub Actions workflow for CI)
 - A Telegram bot and target Telegram channel
-- An Ollama Cloud account/API access
-- An Ollama Cloud model available to your account
+- A Google Gemini API key (or Ollama account/API key when selected)
 - GitHub repository with Actions enabled for scheduled execution
 
 ## Configuration
@@ -56,12 +55,64 @@ The main settings include:
 | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token |
 | `TELEGRAM_CHANNEL_ID` | Target Telegram channel |
+| `LLM_PROVIDER` | `google` (default) or `ollama` |
+| `GOOGLE_API_KEY` | Google Gemini API key |
+| `GOOGLE_MODEL` | Google model, default `gemma-4-31b-it` |
+| `GOOGLE_URL` | Google API base URL (optional override) |
 | `OLLAMA_API_KEY` | Ollama Cloud API key |
 | `OLLAMA_URL` | Ollama API endpoint |
 | `OLLAMA_MODEL` | Ollama Cloud model used for translation and summarization |
 | `OUTPUT_LANGUAGE` | Language used for generated Telegram content |
 
 Do not commit API keys, Telegram tokens, or other secrets to the repository.
+
+## Translation provider and Google API key
+
+Google is the default provider, using `gemma-4-31b-it` through the Gemini API.
+Ollama remains available through configuration; the bot never silently falls
+back to a paid provider.
+
+### Create and install the key
+
+1. Open [Google AI Studio API keys](https://aistudio.google.com/api-keys), sign
+   in, and complete Google's setup/terms if prompted.
+2. Create an API key in a new or existing Google Cloud project. Use the default
+   Gemini API restriction. You do not need to enable paid billing for Gemma's
+   currently listed free API access.
+3. In this GitHub repository, open **Settings → Secrets and variables → Actions
+   → Secrets → New repository secret**. Name it `GOOGLE_API_KEY` and paste the key
+   as its value. Never put the key in a repository variable, commit, or chat.
+4. Under the **Variables** tab, set `LLM_PROVIDER` to `google`. Optionally set
+   `GOOGLE_MODEL` to `gemma-4-31b-it` (already the default).
+5. Deploy the updated code before running the workflow. Keep `OLLAMA_API_KEY`
+   if you want the option to switch back later.
+
+For local runs, export `LLM_PROVIDER=google` and `GOOGLE_API_KEY`, or use the
+project's `.env` file. `.env.example` lists the settings;
+it contains no real credentials.
+
+Check the project's actual requests-per-minute, tokens-per-minute and daily
+quotas in [AI Studio](https://aistudio.google.com/). Quotas apply per project:
+two bots using keys from the same project share capacity. Multiple keys do not
+increase that quota. Free access and availability may change.
+
+### Switch back to Ollama
+
+Set the GitHub Actions variable `LLM_PROVIDER` to `ollama` and ensure the
+`OLLAMA_API_KEY` repository secret is present. Optionally set `OLLAMA_MODEL`
+(default `gemma4:31b-cloud`). No code change is required. Locally use the same
+environment settings. Google and Ollama keep separate model names and keys.
+
+The adapter uses Google's native `generateContent` endpoint or Ollama's chat
+endpoint, with thinking disabled and the original editorial prompts preserved.
+JSON is requested in prompts and validated locally. Truncated or blocked Google
+responses are rejected rather than published. Existing article/event history
+and Telegram delivery handling are unchanged.
+
+References: [Google Gemma API](https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api),
+[API keys](https://ai.google.dev/gemini-api/docs/api-key),
+[pricing](https://ai.google.dev/gemini-api/docs/pricing#gemma-4),
+[quotas](https://ai.google.dev/gemini-api/docs/rate-limits).
 
 ## Local installation
 
@@ -88,6 +139,26 @@ The bot creates its runtime database under `data/` automatically.
 ## GitHub Actions
 
 The bot is designed to run automatically from GitHub Actions.
+
+Cloudflare Worker `tamperelainen-scheduler` dispatches the workflow on this
+**Europe/Helsinki** schedule (both endpoints included):
+
+- Monday–Friday: 07:30, 08:30, …, 21:30 (15 runs).
+- Saturday–Sunday: 09:00, 10:00, …, 22:00 (14 runs).
+
+The Worker checks Helsinki local time, including daylight saving, on a
+`0,30 * * * *` UTC cron. Other checks return without dispatching GitHub Actions.
+GitHub's own scheduled trigger stays disabled to avoid duplicate executions;
+manual workflow runs remain available.
+
+The Worker source and deployment configuration are in `cloudflare/`. The
+existing Cloudflare `GITHUB_TOKEN` secret must have permission to dispatch this
+repository's workflow. To verify and deploy schedule changes:
+
+```bash
+node cloudflare/test-schedule.mjs
+npx wrangler deploy --config cloudflare/wrangler.toml --keep-vars
+```
 
 The workflow:
 
@@ -159,7 +230,7 @@ There is no separate local-name placeholder/protection layer.
 
 ## Local testing without Telegram
 
-You can test the RSS extraction and Ollama translation locally without sending
+You can test the RSS extraction and model translation locally without sending
 anything to Telegram or modifying the processed-article database:
 
 ```bash
@@ -172,7 +243,7 @@ By default this processes the 10 newest RSS articles. To choose another number:
 python test_rss.py --count 5
 ```
 
-To save the Finnish source text and Ollama results for inspection:
+To save the Finnish source text and model results for inspection:
 
 ```bash
 python test_rss.py --count 10 --output test_results.json
@@ -188,5 +259,11 @@ the Telegram sender.
 
 Major Finnish cities with established Russian names are explicitly listed in the
 translation prompt so their Russian forms remain consistent. Other local names
-are handled by Ollama in canonical Finnish form unless a standard Russian name
+are handled by the model in canonical Finnish form unless a standard Russian name
 exists.
+
+To preview Google output without posting or changing article history:
+
+```bash
+OUTPUT_LANGUAGE=ru python test_rss.py --count 3 --output /tmp/tamperelainen-google-preview.json
+```

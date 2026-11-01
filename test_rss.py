@@ -7,7 +7,7 @@ Examples:
     python test_rss.py --count 10 --output test_results.json
 
 The script fetches RSS articles, extracts their Finnish text, runs the normal
-Ollama translation/editor, prints the results, and optionally saves them as JSON.
+model translation/editor, prints the results, and optionally saves them as JSON.
 It does not initialize or modify the article database and never imports the
 Telegram sender.
 """
@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from config import MAX_ARTICLE_CHARS
 from rss import fetch_articles
 from scraper import fetch_article
-from translator import OllamaEditor
+from translator import NewsEditor
 
 
 def run(count: int, output: str | None) -> int:
@@ -33,7 +33,7 @@ def run(count: int, output: str | None) -> int:
     print("Telegram is NOT used. The article database is NOT read or modified.")
     print()
 
-    editor = OllamaEditor()
+    editor = NewsEditor()
     results = []
 
     for index, article in enumerate(selected, start=1):
@@ -65,7 +65,7 @@ def run(count: int, output: str | None) -> int:
             print(title_fi)
             print(body_fi)
             print()
-            print("--- Ollama result ---")
+            print("--- model result ---")
 
             editorial = editor.process(title_fi, body_fi)
 
@@ -114,7 +114,7 @@ def run(count: int, output: str | None) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Test RSS extraction and Ollama translation without Telegram."
+        description="Test RSS extraction and model translation without Telegram."
     )
     parser.add_argument(
         "--count",
@@ -125,7 +125,7 @@ def main() -> int:
     parser.add_argument(
         "--output",
         metavar="FILE",
-        help="Optional JSON file containing source text and Ollama results.",
+        help="Optional JSON file containing source text and model results.",
     )
     args = parser.parse_args()
 
