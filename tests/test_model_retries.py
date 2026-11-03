@@ -135,3 +135,33 @@ def test_invalid_json_response_is_retried(transport):
     post.side_effect = [invalid, response()]
     assert editor._model_request(PAYLOAD)["message"]["content"] == "{}"
     assert sleeps == [5]
+
+
+@pytest.mark.parametrize("status,transient", [
+    (408, True), (429, True), (500, True), (502, True), (503, True), (504, True),
+    (400, False), (401, False), (403, False), (404, False),
+])
+def test_http_failure_severity_is_classified(transport, status, transient):
+    editor, post, _, _ = transport
+    post.return_value = response(status)
+    with pytest.raises(ModelRequestError) as exc:
+        editor._model_request(PAYLOAD, retries=0)
+    assert exc.value.transient is transient
+
+
+def test_exhausted_timeout_is_temporary(transport):
+    editor, post, _, _ = transport
+    post.side_effect = requests.exceptions.Timeout()
+    with pytest.raises(ModelRequestError) as exc:
+        editor._model_request(PAYLOAD, retries=0)
+    assert exc.value.transient is True
+
+
+def test_invalid_api_json_remains_an_error(transport):
+    editor, post, _, _ = transport
+    invalid = response()
+    invalid.json.side_effect = ValueError()
+    post.return_value = invalid
+    with pytest.raises(ModelRequestError) as exc:
+        editor._model_request(PAYLOAD, retries=0)
+    assert exc.value.transient is False

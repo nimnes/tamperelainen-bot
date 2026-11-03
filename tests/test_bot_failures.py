@@ -69,7 +69,7 @@ def test_actions_outputs_have_real_newlines(tmp_path, monkeypatch):
     monkeypatch.setenv("GITHUB_OUTPUT", str(path))
     bot.write_run_outputs(bot.RunResult(posted=2, failed=1, deferred=3))
     assert path.read_text().splitlines() == [
-        "new_articles=2", "failed_articles=1", "deferred_articles=3",
+        "new_articles=2", "failed_articles=1", "deferred_articles=3", "temporary_articles=0",
     ]
 
 
@@ -82,3 +82,18 @@ def test_batch_deadline_defers_without_calling_provider(batch, monkeypatch):
     editor.process.assert_not_called()
     sent.assert_not_called()
     marked.assert_not_called()
+
+
+@pytest.mark.parametrize("transient", [True, False])
+def test_only_temporary_provider_failures_are_warnings(batch, capsys, transient):
+    _, editor, sent, marked = batch
+    editor.process.side_effect = ModelRequestError("Provider unavailable", transient=transient)
+    stats = bot.process_once()
+    assert stats.failed == 1
+    assert stats.temporary == int(transient)
+    assert stats.failed - stats.temporary == (0 if transient else 1)
+    assert stats.deferred == 3
+    sent.assert_not_called()
+    marked.assert_not_called()
+    logs = capsys.readouterr().out
+    assert ("WARNING processing" if transient else "ERROR processing") in logs
