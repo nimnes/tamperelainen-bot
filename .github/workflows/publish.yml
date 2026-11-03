@@ -141,7 +141,14 @@ jobs:
         if: ${{ !cancelled() && steps.run_bot.outputs.failed_articles != '' && steps.run_bot.outputs.failed_articles != '0' }}
         env:
           FAILED_ARTICLES: ${{ steps.run_bot.outputs.failed_articles }}
+          TEMPORARY_ARTICLES: ${{ steps.run_bot.outputs.temporary_articles }}
           DEFERRED_ARTICLES: ${{ steps.run_bot.outputs.deferred_articles }}
         run: |
-          echo "::error::$FAILED_ARTICLES article(s) failed; $DEFERRED_ARTICLES deferred. Unposted articles will be retried while present in RSS."
-          exit 1
+          temporary=${TEMPORARY_ARTICLES:-0}
+          if [ "$temporary" -gt 0 ]; then
+            echo "::warning::$temporary article(s) could not be translated due to temporary provider failures. They remain eligible for retry while present in RSS."
+          fi
+          if [ "$FAILED_ARTICLES" -gt "$temporary" ]; then
+            echo "::error::$((FAILED_ARTICLES - temporary)) article(s) failed unexpectedly; $DEFERRED_ARTICLES deferred."
+            exit 1
+          fi

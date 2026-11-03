@@ -125,9 +125,10 @@ def _finnish_admin_terms(text):
 class ModelRequestError(RuntimeError):
     """Provider failures may stop a batch without marking articles processed."""
 
-    def __init__(self, message, stop_batch=True):
+    def __init__(self, message, stop_batch=True, transient=False):
         super().__init__(message)
         self.stop_batch = stop_batch
+        self.transient = transient
 
 
 def _safe_api_status(response):
@@ -192,14 +193,16 @@ class NewsEditor:
         for attempt in range(retries + 1):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise ModelRequestError(f"{operation}: {self.provider} retry budget exhausted")
+                raise ModelRequestError(f"{operation}: {self.provider} retry budget exhausted", transient=True)
             response = None
+            transient = False
             try:
                 response = requests.post(
                     url, headers=headers, json=body, stream=False,
                     timeout=min(timeout, 40, remaining), allow_redirects=False,
                 )
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+                transient = True
                 error = f"{operation}: {self.provider} network request failed"
             except requests.exceptions.RequestException:
                 raise ModelRequestError(
@@ -219,12 +222,13 @@ class NewsEditor:
                     error = f"{operation}: {self.provider} HTTP {status}{detail}"
                     if status not in {408, 429, 500, 502, 503, 504}:
                         raise ModelRequestError(error, stop_batch=status in {401, 403})
+                    transient = True
 
             if attempt == retries:
-                raise ModelRequestError(f"{error}; exhausted {attempt + 1} attempts") from None
+                raise ModelRequestError(f"{error}; exhausted {attempt + 1} attempts", transient=transient) from None
             delay = _retry_delay(response, attempt)
             if delay > 60 or delay + 1 >= deadline - time.monotonic():
-                raise ModelRequestError(f"{error}; retry deferred to the next run") from None
+                raise ModelRequestError(f"{error}; retry deferred to the next run", transient=transient) from None
             print(f"WARNING: {error}; retry {attempt + 1}/{retries} in {delay:.1f}s")
             time.sleep(delay)
 

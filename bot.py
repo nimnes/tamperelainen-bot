@@ -56,6 +56,7 @@ class RunResult:
     posted: int = 0
     failed: int = 0
     deferred: int = 0
+    temporary: int = 0
 
 
 def write_run_outputs(result):
@@ -66,6 +67,7 @@ def write_run_outputs(result):
                 f"new_articles={result.posted}\n"
                 f"failed_articles={result.failed}\n"
                 f"deferred_articles={result.deferred}\n"
+                f"temporary_articles={result.temporary}\n"
             )
 
 
@@ -126,7 +128,10 @@ def process_once(test=False):
 
         except ModelRequestError as exc:
             result.failed += 1
-            print(f"ERROR processing {article.url}: {exc}")
+            if exc.transient:
+                result.temporary += 1
+            level = "WARNING" if exc.transient else "ERROR"
+            print(f"{level} processing {article.url}: {exc}")
             if exc.stop_batch:
                 result.deferred += len(pending) - index - 1
                 print("Provider unavailable; stopping this batch. Pending articles remain unprocessed.")
@@ -151,5 +156,5 @@ if __name__ == "__main__":
     write_run_outputs(result)
     # Actions reports failures after persisting any successfully posted articles.
     # Local runs should also return a nonzero exit status on article errors.
-    if result.failed and not os.environ.get("GITHUB_ACTIONS"):
+    if result.failed > result.temporary and not os.environ.get("GITHUB_ACTIONS"):
         raise SystemExit(1)

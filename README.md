@@ -288,8 +288,12 @@ At most MAX_ARTICLES_PER_RUN articles (default 5) are attempted in a batch.
 Failed and deferred articles are not marked processed and can be retried on the
 next run while they remain in the RSS feed. Successfully posted articles are saved
 to the release database before a final workflow step reports article failures.
-This prevents a partly successful run from appearing wholly successful and
-preserves delivery history. Batch limits alone do not mark a run as failed.
+Temporary provider failures (HTTP 408/429/500/502/503/504 and connection
+failures/timeouts) produce warning annotations and keep the workflow successful,
+even when no article could be translated. This avoids failure notifications for
+temporary Google outages or rate limits. Authentication, configuration, invalid
+responses, delivery and other unexpected failures still fail the workflow.
+Delivery history is preserved in either case. Batch limits alone do not fail a run.
 GitHub outputs use real newlines so the persistence condition can read the
 posted count correctly.
 
