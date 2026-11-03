@@ -267,3 +267,31 @@ To preview Google output without posting or changing article history:
 ```bash
 OUTPUT_LANGUAGE=ru python test_rss.py --count 3 --output /tmp/tamperelainen-google-preview.json
 ```
+
+### Handling translation service failures
+
+The publishing workflow uses Google only and does not supply Ollama credentials.
+Transient HTTP errors (408, 429, 500, 502, 503 and 504), connection failures and
+invalid API JSON receive up to four attempts with exponential backoff and jitter.
+Retry-After headers and Google RetryInfo delays are respected. Delays above
+60 seconds are deferred to a later scheduled run rather than retried early.
+Each editorial request has a 180-second retry budget and each API attempt uses
+a timeout of at most 40 seconds. A shared five-minute batch budget prevents
+starting more model work indefinitely.
+
+After retries are exhausted, provider failures stop the batch to avoid repeatedly
+hitting an unavailable service. Authentication failures stop immediately.
+Errors include the HTTP code and allowlisted Google status, without logging
+raw API bodies, API keys or model input.
+
+At most MAX_ARTICLES_PER_RUN articles (default 5) are attempted in a batch.
+Failed and deferred articles are not marked processed and can be retried on the
+next run while they remain in the RSS feed. Successfully posted articles are saved
+to the release database before a final workflow step reports article failures.
+This prevents a partly successful run from appearing wholly successful and
+preserves delivery history. Batch limits alone do not mark a run as failed.
+GitHub outputs use real newlines so the persistence condition can read the
+posted count correctly.
+
+The Tests workflow runs compilation and mocked unit tests without calling model
+APIs or sending Telegram messages.

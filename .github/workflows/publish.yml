@@ -92,17 +92,15 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'google' }}
+          LLM_PROVIDER: google
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GOOGLE_MODEL: ${{ vars.GOOGLE_MODEL || 'gemma-4-31b-it' }}
-          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
-          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'gemma4:31b-cloud' }}
           # This repository publishes Russian. The application default is English.
           OUTPUT_LANGUAGE: ru
-        run: python bot.py --once
+        run: python -u bot.py --once
 
       - name: Persist article database to GitHub Release
-        if: steps.run_bot.outputs.new_articles != '0'
+        if: ${{ !cancelled() && steps.run_bot.outputs.new_articles != '' && steps.run_bot.outputs.new_articles != '0' }}
         env:
           GH_TOKEN: ${{ github.token }}
           DB_RELEASE_TAG: articles-db
@@ -138,3 +136,12 @@ jobs:
             sleep "$delay"
           done
           echo "articles.db persisted to GitHub Release $DB_RELEASE_TAG."
+
+      - name: Report article failures
+        if: ${{ !cancelled() && steps.run_bot.outputs.failed_articles != '' && steps.run_bot.outputs.failed_articles != '0' }}
+        env:
+          FAILED_ARTICLES: ${{ steps.run_bot.outputs.failed_articles }}
+          DEFERRED_ARTICLES: ${{ steps.run_bot.outputs.deferred_articles }}
+        run: |
+          echo "::error::$FAILED_ARTICLES article(s) failed; $DEFERRED_ARTICLES deferred. Unposted articles will be retried while present in RSS."
+          exit 1

@@ -1,15 +1,17 @@
 import os
-MAX_ARTICLES_PER_RUN = int(os.getenv('MAX_ARTICLES_PER_RUN', '5'))
+MAX_ARTICLES_PER_RUN = max(1, int(os.getenv('MAX_ARTICLES_PER_RUN', '5')))
 import argparse
 import asyncio
 import html
+import time
+from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 
 from config import MAX_ARTICLE_CHARS, OUTPUT_LANGUAGE
 from database import init_db, is_processed, mark_processed, any_processed
 from rss import fetch_articles
 from scraper import fetch_article
-from translator import NewsEditor
+from translator import NewsEditor, ModelRequestError
 from telegram_sender import send_message
 
 
@@ -49,6 +51,24 @@ def build_message(article, editorial):
     )
 
 
+@dataclass
+class RunResult:
+    posted: int = 0
+    failed: int = 0
+    deferred: int = 0
+
+
+def write_run_outputs(result):
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if github_output:
+        with open(github_output, "a", encoding="utf-8") as output:
+            output.write(
+                f"new_articles={result.posted}\n"
+                f"failed_articles={result.failed}\n"
+                f"deferred_articles={result.deferred}\n"
+            )
+
+
 def process_once(test=False):
     init_db()
     articles = fetch_articles()
@@ -56,22 +76,22 @@ def process_once(test=False):
 
     if not any_processed():
         print("No processed-article history found. Creating initial RSS baseline.")
-        processed_this_run = 0
         for article in articles:
-            if processed_this_run >= MAX_ARTICLES_PER_RUN:
-                print(f'Reached MAX_ARTICLES_PER_RUN={MAX_ARTICLES_PER_RUN}; remaining articles will be processed on the next run.')
-            processed_this_run += 1
-
             mark_processed(article.url, article.title, article.published)
         print(f"Baseline saved: {len(articles)} existing articles will not be posted.")
-        return 0
+        return RunResult()
 
     editor = NewsEditor()
-    new_count = 0
+    # Leave time in the eight-minute job for saving successful deliveries.
+    editor.deadline = time.monotonic() + 300
+    result = RunResult()
+    pending = [article for article in reversed(articles) if not is_processed(article.url)]
 
-    for article in reversed(articles):
-        if is_processed(article.url):
-            continue
+    for index, article in enumerate(pending):
+        if index >= MAX_ARTICLES_PER_RUN or time.monotonic() >= editor.deadline:
+            result.deferred += len(pending) - index
+            print("Batch limit reached; remaining articles deferred to the next run.")
+            break
 
         print(f"NEW: {article.title}\n{article.url}")
 
@@ -101,14 +121,22 @@ def process_once(test=False):
                 )
                 print(f"Sent as {editorial['category']}.")
                 mark_processed(article.url, article.title, article.published)
-                new_count += 1
+                result.posted += 1
                 print("Saved article as processed.")
 
+        except ModelRequestError as exc:
+            result.failed += 1
+            print(f"ERROR processing {article.url}: {exc}")
+            if exc.stop_batch:
+                result.deferred += len(pending) - index - 1
+                print("Provider unavailable; stopping this batch. Pending articles remain unprocessed.")
+                break
         except Exception as exc:
+            result.failed += 1
             print(f"ERROR processing {article.url}: {exc}")
 
-    print(f"New articles processed: {new_count}")
-    return new_count
+    print(f"New articles processed: {result.posted}; failed: {result.failed}; deferred: {result.deferred}")
+    return result
 
 
 if __name__ == "__main__":
@@ -118,10 +146,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if not (args.test or args.once):
         parser.error("Use --test or --once.")
-    new_articles = process_once(test=args.test)
-    print(f"NEW_ARTICLES={new_articles}")
-
-    github_output = os.environ.get("GITHUB_OUTPUT")
-    if github_output:
-        with open(github_output, "a", encoding="utf-8") as output:
-            output.write(f"new_articles={new_articles}\\n")
+    result = process_once(test=args.test)
+    print(f"NEW_ARTICLES={result.posted}")
+    write_run_outputs(result)
+    # Actions reports failures after persisting any successfully posted articles.
+    # Local runs should also return a nonzero exit status on article errors.
+    if result.failed and not os.environ.get("GITHUB_ACTIONS"):
+        raise SystemExit(1)

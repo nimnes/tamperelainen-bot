@@ -3,6 +3,9 @@ import json
 import re
 import requests
 import time
+import random
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 from model_provider import build_request, normalize_response
 
@@ -119,6 +122,60 @@ def _finnish_admin_terms(text):
                      r"(?![A-Za-zÅÄÖåäö])", lowered)
     })
 
+class ModelRequestError(RuntimeError):
+    """Provider failures may stop a batch without marking articles processed."""
+
+    def __init__(self, message, stop_batch=True):
+        super().__init__(message)
+        self.stop_batch = stop_batch
+
+
+def _safe_api_status(response):
+    try:
+        status = response.json().get("error", {}).get("status")
+    except (ValueError, TypeError, AttributeError):
+        return ""
+    allowed = {
+        "INTERNAL", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "INVALID_ARGUMENT",
+        "PERMISSION_DENIED", "UNAUTHENTICATED", "NOT_FOUND", "DEADLINE_EXCEEDED",
+    }
+    return f" ({status})" if isinstance(status, str) and status in allowed else ""
+
+
+def _retry_delay(response, attempt):
+    delay = min(5 * (2 ** attempt), 60) + random.uniform(0, 1)
+    if response is None:
+        return delay
+    # Retry-After may contain seconds or an HTTP date. Never retry earlier.
+    header = response.headers.get("Retry-After")
+    if isinstance(header, str):
+        try:
+            retry_after = float(header)
+        except ValueError:
+            try:
+                date = parsedate_to_datetime(header)
+                if date.tzinfo is None:
+                    date = date.replace(tzinfo=timezone.utc)
+                retry_after = (date - datetime.now(timezone.utc)).total_seconds()
+            except (ValueError, TypeError, OverflowError):
+                retry_after = 0
+        if retry_after >= 0:
+            delay = max(delay, retry_after)
+    # Google can supply a RetryInfo delay instead of an HTTP header.
+    try:
+        details = response.json().get("error", {}).get("details", [])
+        for item in details if isinstance(details, list) else []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("@type") == "type.googleapis.com/google.rpc.RetryInfo":
+                value = item.get("retryDelay", "")
+                if isinstance(value, str) and re.fullmatch(r"[0-9]+(?:\.[0-9]+)?s", value):
+                    delay = max(delay, float(value[:-1]))
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return delay
+
+
 class NewsEditor:
     def __init__(self):
         self.provider = LLM_PROVIDER
@@ -128,27 +185,48 @@ class NewsEditor:
         if self.provider == "google" and not self.key:
             raise ValueError("Set GOOGLE_API_KEY before using Google")
 
-    def _model_request(self, payload, timeout=180, retries=1, operation="Model"):
+    def _model_request(self, payload, timeout=180, retries=3, operation="Model"):
+        """Retry transient failures within both the request and batch budgets."""
         url, headers, body = build_request(self.provider, self.url, self.key, payload)
+        deadline = min(time.monotonic() + 180, getattr(self, "deadline", float("inf")))
         for attempt in range(retries + 1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ModelRequestError(f"{operation}: {self.provider} retry budget exhausted")
+            response = None
             try:
-                response = requests.post(url, headers=headers, json=body,
-                                         stream=False, timeout=timeout, allow_redirects=False)
+                response = requests.post(
+                    url, headers=headers, json=body, stream=False,
+                    timeout=min(timeout, 40, remaining), allow_redirects=False,
+                )
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
-                if attempt < retries:
-                    continue
-                raise RuntimeError(f"{operation}: {self.provider} network request failed") from None
+                error = f"{operation}: {self.provider} network request failed"
             except requests.exceptions.RequestException:
-                raise RuntimeError(f"{operation}: {self.provider} request failed") from None
-            if response.status_code in {429, 500, 502, 503, 504} and attempt < retries:
-                time.sleep(2)
-                continue
-            if not 200 <= response.status_code < 300:
-                raise RuntimeError(f"{operation}: {self.provider} HTTP {response.status_code}")
-            try:
-                return normalize_response(self.provider, response.json())
-            except (ValueError, TypeError, AttributeError):
-                raise RuntimeError(f"{operation}: {self.provider} invalid response") from None
+                raise ModelRequestError(
+                    f"{operation}: {self.provider} request failed"
+                ) from None
+            else:
+                status = response.status_code
+                if 200 <= status < 300:
+                    try:
+                        return normalize_response(self.provider, response.json())
+                    except (ValueError, TypeError, AttributeError):
+                        error = f"{operation}: {self.provider} invalid response"
+                else:
+                    # Only log the HTTP code and an allowlisted API status.
+                    # Raw bodies/messages can contain keys, URLs or article text.
+                    detail = _safe_api_status(response)
+                    error = f"{operation}: {self.provider} HTTP {status}{detail}"
+                    if status not in {408, 429, 500, 502, 503, 504}:
+                        raise ModelRequestError(error, stop_batch=status in {401, 403})
+
+            if attempt == retries:
+                raise ModelRequestError(f"{error}; exhausted {attempt + 1} attempts") from None
+            delay = _retry_delay(response, attempt)
+            if delay > 60 or delay + 1 >= deadline - time.monotonic():
+                raise ModelRequestError(f"{error}; retry deferred to the next run") from None
+            print(f"WARNING: {error}; retry {attempt + 1}/{retries} in {delay:.1f}s")
+            time.sleep(delay)
 
 
     def _repair_finnish_administrative_terms(self, title, summary):
@@ -215,7 +293,6 @@ Summary:
                 "options": {"temperature": 0.0},
             },
             timeout=60,
-            retries=1,
             operation="Administrative-term correction",
         )
 
@@ -378,7 +455,6 @@ Additional rules:
                 "options": {"temperature": 0.1},
             },
             timeout=90,
-            retries=1,
             operation="Translation",
         )
 
